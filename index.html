@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>工程水印相机</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-icon">📷</span>
+        <div>
+          <h1>工程水印相机</h1>
+          <p>施工记录 · 可自定义水印</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button type="button" id="btnNew" class="btn btn-ghost" title="新建">新建</button>
+        <button type="button" id="btnExport" class="btn btn-primary" disabled>导出图片</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <!-- 预览区 -->
+      <section class="preview-panel">
+        <div class="preview-toolbar">
+          <label class="btn btn-secondary file-btn">
+            <input type="file" id="fileInput" accept="image/*" hidden />
+            选择图片
+          </label>
+          <label class="btn btn-secondary file-btn">
+            <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden />
+            拍照
+          </label>
+          <span id="imageInfo" class="muted">尚未选择图片</span>
+        </div>
+        <div class="canvas-wrap" id="canvasWrap">
+          <div class="empty-state" id="emptyState">
+            <div class="empty-icon">🏞️</div>
+            <p>选择或拍摄一张照片</p>
+            <p class="muted">水印将叠加在图片上，样式与工程记录一致</p>
+          </div>
+          <canvas id="mainCanvas"></canvas>
+        </div>
+      </section>
+
+      <!-- 控制区 -->
+      <aside class="controls-panel">
+        <div class="tabs">
+          <button type="button" class="tab active" data-tab="content">内容</button>
+          <button type="button" class="tab" data-tab="style">样式</button>
+          <button type="button" class="tab" data-tab="types">类型</button>
+        </div>
+
+        <!-- 内容 Tab -->
+        <div class="tab-panel active" id="tab-content">
+          <div class="field">
+            <label>水印类型</label>
+            <select id="typeSelect"></select>
+          </div>
+          <div class="field">
+            <label>标题（蓝条）</label>
+            <input type="text" id="titleInput" placeholder="工程记录" />
+          </div>
+          <div class="field">
+            <label>副标题（黄条）</label>
+            <input type="text" id="subtitleInput" placeholder="项目名称…施工前" />
+          </div>
+          <div class="field-list-header">
+            <span>字段内容</span>
+            <button type="button" id="btnAddField" class="btn-text">+ 添加字段</button>
+          </div>
+          <div id="fieldsEditor" class="fields-editor"></div>
+          <p class="hint field-hint">时间、位置可点选或手填；天气按你选的时:分对齐到最近整点小时（Open-Meteo 逐小时，约 1940 年起，免 Key）。无分钟级实况。框体/文字透明度在「样式」中分调。</p>
+          <div class="field-row-actions">
+            <button type="button" id="btnPickTime" class="btn btn-ghost btn-sm">点选时间</button>
+            <button type="button" id="btnPickLocation" class="btn btn-ghost btn-sm">点选位置</button>
+            <button type="button" id="btnFillGps" class="btn btn-ghost btn-sm">当前位置</button>
+            <button type="button" id="btnRefreshWeather" class="btn btn-ghost btn-sm">更新天气</button>
+          </div>
+          <p id="autoStatus" class="muted auto-status" aria-live="polite"></p>
+        </div>
+
+        <!-- 样式 Tab -->
+        <div class="tab-panel" id="tab-style">
+          <div class="field">
+            <label>水印大小 <span id="scaleVal" class="val">100%</span></label>
+            <input type="range" id="scaleRange" min="40" max="180" value="100" />
+          </div>
+          <div class="field">
+            <label>文字大小 <span id="fontVal" class="val">100%</span></label>
+            <input type="range" id="fontRange" min="60" max="160" value="100" />
+          </div>
+          <div class="field">
+            <label>框体透明度 <span id="boxOpacityVal" class="val">92%</span></label>
+            <input type="range" id="boxOpacityRange" min="0" max="100" value="92" />
+          </div>
+          <div class="field">
+            <label>文字透明度 <span id="textOpacityVal" class="val">100%</span></label>
+            <input type="range" id="textOpacityRange" min="10" max="100" value="100" />
+          </div>
+          <div class="field">
+            <label>边框圆角 <span id="radiusVal" class="val">12</span></label>
+            <input type="range" id="radiusRange" min="0" max="28" value="12" />
+          </div>
+          <div class="field">
+            <label>位置</label>
+            <div class="pos-grid" id="posGrid">
+              <button type="button" data-pos="tl" title="左上">↖</button>
+              <button type="button" data-pos="tc" title="中上">↑</button>
+              <button type="button" data-pos="tr" title="右上">↗</button>
+              <button type="button" data-pos="ml" title="左中">←</button>
+              <button type="button" data-pos="mc" title="居中">·</button>
+              <button type="button" data-pos="mr" title="右中">→</button>
+              <button type="button" data-pos="bl" class="active" title="左下">↙</button>
+              <button type="button" data-pos="bc" title="中下">↓</button>
+              <button type="button" data-pos="br" title="右下">↘</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>边距 <span id="marginVal" class="val">24px</span></label>
+            <input type="range" id="marginRange" min="8" max="80" value="24" />
+          </div>
+          <div class="color-row">
+            <div class="field">
+              <label>蓝条颜色</label>
+              <input type="color" id="headerColor" value="#1e6bb8" />
+            </div>
+            <div class="field">
+              <label>黄条颜色</label>
+              <input type="color" id="bannerColor" value="#f5c518" />
+            </div>
+            <div class="field">
+              <label>正文颜色</label>
+              <input type="color" id="textColor" value="#1a1a1a" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 类型 Tab -->
+        <div class="tab-panel" id="tab-types">
+          <p class="hint">管理水印模板类型。每种类型有固定字段结构，可在「内容」里填值。</p>
+          <div id="typesList" class="types-list"></div>
+          <button type="button" id="btnNewType" class="btn btn-secondary btn-block">+ 新建类型</button>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- 类型编辑弹窗 -->
+  <div class="modal" id="typeModal" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-card">
+      <h2 id="typeModalTitle">新建类型</h2>
+      <div class="field">
+        <label>类型名称</label>
+        <input type="text" id="typeNameInput" placeholder="例如：施工前记录" />
+      </div>
+      <div class="field">
+        <label>默认标题</label>
+        <input type="text" id="typeDefaultTitle" placeholder="工程记录" />
+      </div>
+      <div class="field">
+        <label>默认副标题</label>
+        <input type="text" id="typeDefaultSubtitle" placeholder="项目名称…阶段" />
+      </div>
+      <div class="field-list-header">
+        <span>字段定义（标签）</span>
+        <button type="button" id="btnAddTypeField" class="btn-text">+ 字段</button>
+      </div>
+      <div id="typeFieldsEditor" class="fields-editor"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close>取消</button>
+        <button type="button" id="btnSaveType" class="btn btn-primary">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 时间点选：日期 + 时间分开，方便修改 -->
+  <div class="modal" id="timeModal" hidden>
+    <div class="modal-backdrop" data-close-time></div>
+    <div class="modal-card modal-card-time">
+      <h2>点选拍摄时间</h2>
+      <p class="hint">日期和时间分开选择。点输入框右侧日历/时钟图标，或直接输入。仍可在字段里手改。</p>
+      <div class="time-pick-grid">
+        <div class="field">
+          <label>日期</label>
+          <input type="date" id="datePickerInput" />
+        </div>
+        <div class="field">
+          <label>时间（时:分）</label>
+          <input type="time" id="timePickerInput" step="60" />
+        </div>
+      </div>
+      <div class="field">
+        <label>快捷时间</label>
+        <div class="time-presets" id="timePresets">
+          <button type="button" class="btn btn-ghost btn-sm" data-time="08:00">08:00</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-time="09:00">09:00</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-time="10:00">10:00</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-time="12:00">12:00</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-time="14:00">14:00</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-time="16:00">16:00</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-time="18:00">18:00</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>预览</label>
+        <div id="timePreview" class="time-preview">—</div>
+      </div>
+      <div class="field-row-actions">
+        <button type="button" id="btnTimeNow" class="btn btn-ghost btn-sm">填入现在</button>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close-time>取消</button>
+        <button type="button" id="btnConfirmTime" class="btn btn-primary">确认并更新天气</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 位置点选（大窗口） -->
+  <div class="modal modal-map-root" id="locModal" hidden>
+    <div class="modal-backdrop" data-close-loc></div>
+    <div class="modal-card modal-card-map">
+      <div class="map-modal-head">
+        <div>
+          <h2>点选位置</h2>
+          <p class="hint">高清 WGS-84 卫星图 · 搜索 / 点击 / 拖标记 · 触控板双指平移、捏合缩放</p>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-loc aria-label="关闭">关闭</button>
+      </div>
+      <div class="loc-search-row">
+        <input type="text" id="locSearchInput" placeholder="搜索地点，如：江门 竹山" />
+        <button type="button" id="btnLocSearch" class="btn btn-secondary">搜索</button>
+        <button type="button" id="btnLocGps" class="btn btn-ghost">定位</button>
+        <div class="basemap-switch" id="basemapSwitch" title="切换卫星底图">
+          <button type="button" class="btn btn-ghost btn-sm active" data-basemap="google">高清卫星</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-basemap="esri">Esri备用</button>
+        </div>
+      </div>
+      <div id="locSearchResults" class="loc-results" hidden></div>
+      <div id="map" class="map-view"></div>
+      <div class="loc-preview">
+        <div><span class="muted">经度</span> <span id="locLngPreview">—</span></div>
+        <div><span class="muted">纬度</span> <span id="locLatPreview">—</span></div>
+        <div class="loc-addr"><span class="muted">地址</span> <span id="locAddrPreview">点击地图选择</span></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close-loc>取消</button>
+        <button type="button" id="btnConfirmLoc" class="btn btn-primary">确认并更新天气</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="app.js"></script>
+</body>
+</html>
