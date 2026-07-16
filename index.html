@@ -126,7 +126,7 @@
           </div>
           <div class="field">
             <label>副标题（黄条）</label>
-            <input type="text" id="subtitleInput" placeholder="项目名称…施工前" />
+            <input type="text" id="subtitleInput" placeholder="项目名称 / 阶段（选填）" />
           </div>
           <div class="field-list-header">
             <span>字段内容</span>
@@ -248,7 +248,7 @@
       <h2 id="typeModalTitle">新建类型</h2>
       <div class="field">
         <label>类型名称</label>
-        <input type="text" id="typeNameInput" placeholder="例如：施工前记录" />
+        <input type="text" id="typeNameInput" placeholder="类型名称" />
       </div>
       <div class="field">
         <label>默认标题</label>
@@ -256,7 +256,7 @@
       </div>
       <div class="field">
         <label>默认副标题</label>
-        <input type="text" id="typeDefaultSubtitle" placeholder="项目名称…阶段" />
+        <input type="text" id="typeDefaultSubtitle" placeholder="选填" />
       </div>
       <div class="field-list-header">
         <span>字段定义（标签）</span>
@@ -324,7 +324,7 @@
         <button type="button" class="btn btn-ghost btn-sm" data-close-loc aria-label="关闭">关闭</button>
       </div>
       <div class="loc-search-row">
-        <input type="text" id="locSearchInput" placeholder="搜索地点，如：江门 竹山" />
+        <input type="text" id="locSearchInput" placeholder="搜索地点" />
         <button type="button" id="btnLocSearch" class="btn btn-secondary">搜索</button>
         <button type="button" id="btnLocGps" class="btn btn-ghost">定位</button>
         <div class="basemap-switch" id="basemapSwitch" title="切换卫星底图">
@@ -339,7 +339,7 @@
         <div><span class="muted">纬度</span> <span id="locLatPreview">—</span></div>
         <div class="loc-addr"><span class="muted">地址</span> <span id="locAddrPreview">点击地图选择</span></div>
       </div>
-      <div class="modal-actions">
+      <div class="modal-actions loc-modal-actions">
         <button type="button" class="btn btn-ghost" data-close-loc>取消</button>
         <button type="button" id="btnConfirmLoc" class="btn btn-primary">确认并更新天气</button>
       </div>

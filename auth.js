@@ -40,8 +40,13 @@
     if (authGate) authGate.hidden = true;
     if (appRoot) appRoot.hidden = false;
     renderUserBar();
-    // 通知主应用已就绪
-    window.dispatchEvent(new CustomEvent("auth:ready", { detail: currentUser }));
+    // 通知主应用已就绪（触发布局后画布适配）
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent("auth:ready", { detail: currentUser }));
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new CustomEvent("auth:ready", { detail: currentUser }));
+      });
+    });
   }
 
   function setAuthMode(mode) {

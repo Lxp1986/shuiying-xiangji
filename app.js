@@ -4,18 +4,18 @@
  * 支持：点选时间、地图选点（经纬度+地址）、按时间/位置自动天气（含历史）
  */
 
-const STORAGE_KEY = "shuiying_types_v2";
-const STORAGE_KEY_LEGACY = "shuiying_types_v1";
+const STORAGE_KEY = "shuiying_types_v3";
+const STORAGE_KEY_LEGACY = ["shuiying_types_v2", "shuiying_types_v1"];
 
-// —— 默认类型 ——
+// —— 默认类型（上线干净模板：无示例工程/坐标/天气） ——
 const DEFAULT_TYPES = [
   {
     id: "eng-record",
     name: "工程记录",
     defaultTitle: "工程记录",
-    defaultSubtitle: "竹山排水渠…施工前",
+    defaultSubtitle: "",
     fields: [
-      { key: "content", label: "施工内容", defaultValue: "请输入内容" },
+      { key: "content", label: "施工内容", defaultValue: "" },
       { key: "time", label: "拍摄时间", defaultValue: "", auto: "datetime" },
       { key: "weather", label: "天    气", defaultValue: "", auto: "weather" },
       { key: "address", label: "地    址", defaultValue: "", auto: "address" },
@@ -27,11 +27,11 @@ const DEFAULT_TYPES = [
     id: "safety",
     name: "安全巡查",
     defaultTitle: "安全巡查",
-    defaultSubtitle: "现场安全检查",
+    defaultSubtitle: "",
     fields: [
       { key: "location", label: "检查地点", defaultValue: "", auto: "address" },
       { key: "person", label: "巡查人员", defaultValue: "" },
-      { key: "result", label: "检查结果", defaultValue: "正常" },
+      { key: "result", label: "检查结果", defaultValue: "" },
       { key: "time", label: "检查时间", defaultValue: "", auto: "datetime" },
       { key: "weather", label: "天    气", defaultValue: "", auto: "weather" },
       { key: "lng", label: "经    度", defaultValue: "", auto: "lng" },
@@ -42,7 +42,7 @@ const DEFAULT_TYPES = [
     id: "progress",
     name: "进度汇报",
     defaultTitle: "进度汇报",
-    defaultSubtitle: "施工进度记录",
+    defaultSubtitle: "",
     fields: [
       { key: "section", label: "施工段", defaultValue: "" },
       { key: "progress", label: "完成进度", defaultValue: "" },
@@ -63,7 +63,7 @@ const state = {
   types: [],
   typeId: "eng-record",
   title: "工程记录",
-  subtitle: "竹山排水渠…施工前",
+  subtitle: "",
   fieldValues: {},
   scale: 1,
   fontScale: 1,
@@ -238,15 +238,44 @@ function migrateTypes(types) {
   });
 }
 
+/** 清除历史示例文案（竹山、假坐标等） */
+function scrubSampleContent(types) {
+  const sampleSubtitles = /竹山|排水渠|施工前|现场安全检查|施工进度记录/;
+  const sampleValues = /请输入内容|小雨\s*\d|111\.724|22\.040/;
+  return types.map((t) => {
+    const next = { ...t, fields: (t.fields || []).map((f) => ({ ...f })) };
+    if (sampleSubtitles.test(next.defaultSubtitle || "")) {
+      next.defaultSubtitle = "";
+    }
+    for (const f of next.fields) {
+      if (sampleValues.test(String(f.defaultValue || ""))) {
+        f.defaultValue = "";
+      }
+    }
+    return next;
+  });
+}
+
 function loadTypes() {
   try {
     let raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) raw = localStorage.getItem(STORAGE_KEY_LEGACY);
+    if (!raw) {
+      for (const key of STORAGE_KEY_LEGACY) {
+        raw = localStorage.getItem(key);
+        if (raw) break;
+      }
+    }
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length) {
-        state.types = migrateTypes(parsed);
+        state.types = scrubSampleContent(migrateTypes(parsed));
         saveTypes();
+        // 清理旧 key，避免示例残留
+        for (const key of STORAGE_KEY_LEGACY) {
+          try {
+            localStorage.removeItem(key);
+          } catch (_) {}
+        }
         return;
       }
     }
@@ -670,8 +699,40 @@ function confirmTime() {
 }
 
 // —— 地图弹窗 ——
+/** 手机浏览器底栏会吃掉 100vh：用 visualViewport 同步真实可见高度 */
+function syncVisualViewportHeight() {
+  const h =
+    (window.visualViewport && window.visualViewport.height) ||
+    window.innerHeight ||
+    document.documentElement.clientHeight;
+  document.documentElement.style.setProperty("--vvh", `${Math.round(h)}px`);
+  if (map) {
+    try {
+      map.invalidateSize({ animate: false });
+    } catch (_) {}
+  }
+}
+
+let _vvBound = false;
+function bindVisualViewportForMap() {
+  syncVisualViewportHeight();
+  if (_vvBound) return;
+  _vvBound = true;
+  const onChange = () => syncVisualViewportHeight();
+  window.addEventListener("resize", onChange);
+  window.addEventListener("orientationchange", () => setTimeout(onChange, 150));
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", onChange);
+    window.visualViewport.addEventListener("scroll", onChange);
+  }
+}
+
 function openLocModal() {
   locModal.hidden = false;
+  document.body.classList.add("loc-modal-open");
+  bindVisualViewportForMap();
+  syncVisualViewportHeight();
+
   const lng =
     state.pickedLng ??
     parseFloat(getFieldValueByRole("lng"));
@@ -679,20 +740,23 @@ function openLocModal() {
     state.pickedLat ??
     parseFloat(getFieldValueByRole("lat"));
   const has = Number.isFinite(lng) && Number.isFinite(lat);
-  const initLng = has ? lng : 111.72487469;
-  const initLat = has ? lat : 22.04070769;
+  // 无坐标时默认中国大致中心（非示例工程点），仅作地图初始视野
+  const initLng = has ? lng : 104.1954;
+  const initLat = has ? lat : 35.8617;
+  const initZoom = has ? MAP_DEFAULT_ZOOM : 4;
   const addr = getFieldValueByRole("address") || "";
 
   pendingLoc = {
-    lng: initLng,
-    lat: initLat,
+    lng: has ? initLng : null,
+    lat: has ? initLat : null,
     address: addr,
   };
   updateLocPreview();
 
   // 延迟初始化，等弹窗显示后再 invalidateSize
   requestAnimationFrame(() => {
-    initMap(initLat, initLng);
+    syncVisualViewportHeight();
+    initMap(initLat, initLng, initZoom);
     if (has && !addr) {
       reverseGeocode(initLat, initLng)
         .then((a) => {
@@ -701,11 +765,16 @@ function openLocModal() {
         })
         .catch(() => {});
     }
+    setTimeout(() => {
+      syncVisualViewportHeight();
+      map?.invalidateSize({ animate: false });
+    }, 250);
   });
 }
 
 function closeLocModal() {
   locModal.hidden = true;
+  document.body.classList.remove("loc-modal-open");
   $("#locSearchResults").hidden = true;
   $("#locSearchResults").innerHTML = "";
 }
@@ -715,7 +784,9 @@ function updateLocPreview() {
     pendingLoc.lng != null ? Number(pendingLoc.lng).toFixed(8) : "—";
   $("#locLatPreview").textContent =
     pendingLoc.lat != null ? Number(pendingLoc.lat).toFixed(8) : "—";
-  $("#locAddrPreview").textContent = pendingLoc.address || "解析中…";
+  $("#locAddrPreview").textContent =
+    pendingLoc.address ||
+    (pendingLoc.lng != null ? "解析中…" : "点击地图或搜索选择位置");
 }
 
 /**
@@ -862,7 +933,7 @@ function setBasemap(name) {
   });
 }
 
-function initMap(lat, lng) {
+function initMap(lat, lng, zoom = MAP_DEFAULT_ZOOM) {
   if (typeof L === "undefined") {
     setStatus("地图库加载失败，请检查网络", "error");
     return;
@@ -886,7 +957,7 @@ function initMap(lat, lng) {
       minZoom: 3,
       // 预加载周边瓦片，缩放后更快变清晰
       preferCanvas: false,
-    }).setView([lat, lng], MAP_DEFAULT_ZOOM);
+    }).setView([lat, lng], zoom);
 
     mapBaseLayers = createBaseLayers();
     // 默认高清 Google 卫星；加载失败时可切 Esri
@@ -924,10 +995,7 @@ function initMap(lat, lng) {
       });
     }
   } else {
-    const z = map.getZoom();
-    // 已打开过但缩放偏低时，提到更清晰级别
-    const targetZ = z < 17 ? MAP_DEFAULT_ZOOM : z;
-    map.setView([lat, lng], targetZ);
+    map.setView([lat, lng], zoom);
     mapMarker.setLatLng([lat, lng]);
   }
   setTimeout(() => {
@@ -1240,8 +1308,8 @@ function clamp(v, min, max) {
 }
 
 /**
- * 让画布在预览区内完整显示（不滚动），等比缩放。
- * canvas.width/height 仍为原图像素，仅改 CSS 显示尺寸；导出不受影响。
+ * 让画布在预览区内完整显示（contain），不出现页面滚动。
+ * 仅改 CSS 宽高；canvas.width/height 始终等于原图像素，导出分辨率不变。
  */
 function fitCanvasDisplay() {
   if (!state.image) {
@@ -1252,24 +1320,40 @@ function fitCanvasDisplay() {
   const wrap = $("#canvasWrap");
   if (!wrap) return;
 
-  const style = getComputedStyle(wrap);
-  const padX =
-    (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
-  const padY =
-    (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+  const rect = wrap.getBoundingClientRect();
+  // 四周留 16px 边距，避免贴边
+  const inset = 16;
+  const availW = Math.max(32, rect.width - inset * 2);
+  const availH = Math.max(32, rect.height - inset * 2);
 
-  const availW = Math.max(40, wrap.clientWidth - padX);
-  const availH = Math.max(40, wrap.clientHeight - padY);
+  // 容器尚未布局完成时延后
+  if (rect.width < 8 || rect.height < 8) {
+    scheduleFitCanvas();
+    return;
+  }
+
   const iw = state.image.naturalWidth || canvas.width;
   const ih = state.image.naturalHeight || canvas.height;
   if (!iw || !ih) return;
 
-  // 完整落入容器，不放大超过 100%（小图保持原大小观感可选：去掉 , 1 即允许放大）
-  const scale = Math.min(availW / iw, availH / ih, 1);
+  // 等比完整放入（可缩小；预览可略放大以填满，不影响导出像素）
+  const scale = Math.min(availW / iw, availH / ih);
   const dw = Math.max(1, Math.floor(iw * scale));
   const dh = Math.max(1, Math.floor(ih * scale));
   canvas.style.width = `${dw}px`;
   canvas.style.height = `${dh}px`;
+  state._displayScale = scale;
+}
+
+let _fitRaf = 0;
+function scheduleFitCanvas() {
+  if (_fitRaf) cancelAnimationFrame(_fitRaf);
+  _fitRaf = requestAnimationFrame(() => {
+    _fitRaf = 0;
+    fitCanvasDisplay();
+    // 二次适配：登录后/字体加载后布局可能再变
+    requestAnimationFrame(() => fitCanvasDisplay());
+  });
 }
 
 function redraw() {
@@ -1287,7 +1371,7 @@ function redraw() {
   $("#btnExport").disabled = false;
 
   const img = state.image;
-  // 位图分辨率 = 原图（保证导出清晰）
+  // 位图分辨率 = 原图（保证导出清晰，绝不因预览缩放改掉）
   if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;
@@ -1305,7 +1389,7 @@ function redraw() {
   drawWatermarkAt(ctx, ox, oy, layout);
   state._layout = { ...layout, x: ox, y: oy };
 
-  fitCanvasDisplay();
+  scheduleFitCanvas();
 }
 
 // —— 图片 / 导出 ——
@@ -1815,17 +1899,25 @@ function init() {
   $("#textColor").value = state.textColor;
   bindEvents();
 
-  // 窗口 / 侧栏变化时重新适配画布显示
+  // 窗口 / 侧栏 / 登录后显示主界面时重新适配
   const wrap = $("#canvasWrap");
   if (wrap && typeof ResizeObserver !== "undefined") {
     let roTimer = null;
     const ro = new ResizeObserver(() => {
       clearTimeout(roTimer);
-      roTimer = setTimeout(() => fitCanvasDisplay(), 40);
+      roTimer = setTimeout(() => scheduleFitCanvas(), 30);
     });
     ro.observe(wrap);
+    // 同时观察预览面板，侧栏改宽时也能触发
+    const panel = document.querySelector(".preview-panel");
+    if (panel) ro.observe(panel);
   }
-  window.addEventListener("resize", () => fitCanvasDisplay());
+  window.addEventListener("resize", () => scheduleFitCanvas());
+  window.addEventListener("auth:ready", () => scheduleFitCanvas());
+  // 方向变化（手机）
+  window.addEventListener("orientationchange", () => {
+    setTimeout(() => scheduleFitCanvas(), 200);
+  });
 
   if (document.fonts?.ready) document.fonts.ready.then(() => redraw());
 }

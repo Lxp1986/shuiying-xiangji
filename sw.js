@@ -1,5 +1,5 @@
 /* 工程水印相机 - 简易 Service Worker（离线打开壳 + 缓存静态资源） */
-const CACHE = "shuiying-v2";
+const CACHE = "shuiying-v5";
 const ASSETS = [
   "./",
   "./index.html",
