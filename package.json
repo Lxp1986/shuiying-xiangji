@@ -9,6 +9,10 @@
   "scripts": {
     "start": "ELECTRON_RUN_AS_NODE= electron .",
     "dev": "ELECTRON_RUN_AS_NODE= electron .",
+    "web": "python3 -m http.server 5173",
+    "prepare:web": "bash scripts/prepare-web.sh",
+    "deploy:cf": "bash scripts/prepare-web.sh && wrangler pages deploy dist-web --project-name=shuiying-xiangji --commit-dirty=true",
+    "db:init": "wrangler d1 execute shuiying-auth --remote --file=schema.sql",
     "pack": "ELECTRON_RUN_AS_NODE= electron-builder --dir",
     "dist": "ELECTRON_RUN_AS_NODE= electron-builder",
     "dist:mac": "ELECTRON_RUN_AS_NODE= electron-builder --mac",

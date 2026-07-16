@@ -1,10 +1,11 @@
 /* 工程水印相机 - 简易 Service Worker（离线打开壳 + 缓存静态资源） */
-const CACHE = "shuiying-v1";
+const CACHE = "shuiying-v2";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./auth.js",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
@@ -29,8 +30,9 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return;
 
   const url = new URL(req.url);
-  // 仅缓存同源静态资源；地图/天气/字体走网络
+  // 仅缓存同源静态资源；API / 地图 / 天气走网络
   if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith("/api/")) return;
 
   event.respondWith(
     caches.match(req).then((cached) => {

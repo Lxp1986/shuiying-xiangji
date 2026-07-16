@@ -7,49 +7,76 @@
 - 小时级天气 / 历史天气（Open-Meteo，约 1940 年起，免 API Key）
 - 框体 / 文字透明度分开调节
 
-## 三种使用方式
+## 在线地址（Cloudflare Pages）
+
+- **正式站**：https://shuiying-xiangji.pages.dev/
+- **自定义域名**：https://sy.lxpyll.top/（DNS 需 CNAME 到 `shuiying-xiangji.pages.dev`）
+- 重新部署：`npm run deploy:cf`
+
+### 登录与授权注册
+
+| 角色 | 说明 |
+|------|------|
+| 管理员 | 首次部署用密钥 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 自动创建 |
+| 普通用户 | **必须**持有管理员发放的一次性**授权码**才能注册 |
+
+流程：管理员登录 →「授权管理」→ 生成授权码 → 发给对方 → 对方注册时填写授权码 → 自动生效。
+
+```bash
+# 设置/轮换管理员密码（生产密钥，不进代码库）
+printf '%s' '你的密码' | npx wrangler pages secret put ADMIN_PASSWORD --project-name=shuiying-xiangji
+printf '%s' 'yclxp' | npx wrangler pages secret put ADMIN_USERNAME --project-name=shuiying-xiangji
+```
+
+### 绑定域名 sy.lxpyll.top
+
+1. Cloudflare Dashboard → 域名 `lxpyll.top` → DNS
+2. 添加记录：
+   - **类型** CNAME  
+   - **名称** `sy`  
+   - **目标** `shuiying-xiangji.pages.dev`  
+   - **代理状态** 已代理（橙色云）
+3. Pages → shuiying-xiangji → Custom domains 中已添加 `sy.lxpyll.top`，等证书 Active 即可
+
+## 本地怎么启动
 
 ### 1. 浏览器（最快）
 
 ```bash
 cd shuiying-xiangji
-python3 -m http.server 5173
+npm run web
+# 或：python3 -m http.server 5173
 # 打开 http://localhost:5173
 ```
 
-也可用 VS Code / 任意静态服务器。定位、PWA 安装建议用 **http(s)**，不要直接双击 `file://`。
+定位、PWA 安装建议用 **http(s)**，不要直接双击 `file://`。
 
 ### 2. 安装为 App（PWA）
 
-1. 用手机或电脑浏览器打开上述地址（需 https 或 localhost）
+1. 打开正式站或本地 `http://localhost:5173`（需 https 或 localhost）
 2. **iPhone Safari**：分享 →「添加到主屏幕」
 3. **Android Chrome**：菜单 →「安装应用」/「添加到主屏幕」
 4. **Mac/Windows Chrome/Edge**：地址栏右侧「安装」图标
 
-安装后独立窗口打开，图标在桌面/主屏幕，体验接近原生 App。  
-（地图、天气仍需联网。）
+地图、天气仍需联网。
 
 ### 3. 桌面客户端（Electron）
 
 ```bash
-# 安装依赖（首次）
-npm install
+npm install   # 首次
+npm start     # 打开桌面窗口
 
-# 开发运行
-npm start
-
-# 打包安装包（输出到 release/）
-npm run dist:mac    # → .dmg / .zip（macOS）
-npm run dist:win    # → 安装包 / 绿色版（Windows）
-npm run dist:linux  # → AppImage / deb
+npm run dist:mac    # 打包 .dmg
+npm run dist:win
+npm run dist:linux
 ```
 
 | 命令 | 说明 |
 |------|------|
-| `npm start` | 本地打开桌面窗口 |
+| `npm run web` | 本地网页服务 :5173 |
+| `npm start` | Electron 桌面窗口 |
+| `npm run deploy:cf` | 部署到 Cloudflare Pages |
 | `npm run dist:mac` | 生成 macOS 安装包 |
-| `npm run pack` | 只生成未打包的应用目录（调试用） |
-
 ## 功能一览
 
 | 功能 | 说明 |

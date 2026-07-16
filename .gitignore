@@ -6,6 +6,8 @@ node_modules/
 .cache/
 release/
 dist/
+dist-web/
 *.dmg
 *.exe
 *.AppImage
+.wrangler/

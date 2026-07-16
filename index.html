@@ -19,7 +19,54 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 </head>
 <body>
-  <div class="app">
+  <!-- 登录 / 注册门禁 -->
+  <div id="authGate" class="auth-gate">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <span class="brand-icon">📷</span>
+        <h1>工程水印相机</h1>
+        <p>登录后使用 · 注册须管理员授权码</p>
+      </div>
+      <div class="auth-tabs">
+        <button type="button" class="auth-mode-btn active" data-mode="login">登录</button>
+        <button type="button" class="auth-mode-btn" data-mode="register">注册</button>
+      </div>
+      <form id="authLoginForm" class="auth-form">
+        <div class="field">
+          <label>用户名</label>
+          <input type="text" id="loginUsername" autocomplete="username" required placeholder="用户名" />
+        </div>
+        <div class="field">
+          <label>密码</label>
+          <input type="password" id="loginPassword" autocomplete="current-password" required placeholder="密码" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">登录</button>
+      </form>
+      <form id="authRegisterForm" class="auth-form" hidden>
+        <div class="field">
+          <label>用户名</label>
+          <input type="text" id="regUsername" autocomplete="username" required placeholder="2–32 位" />
+        </div>
+        <div class="field">
+          <label>密码</label>
+          <input type="password" id="regPassword" autocomplete="new-password" required placeholder="至少 8 位" />
+        </div>
+        <div class="field">
+          <label>确认密码</label>
+          <input type="password" id="regPassword2" autocomplete="new-password" required placeholder="再输入一次" />
+        </div>
+        <div class="field">
+          <label>管理员授权码 <span class="muted">（必填）</span></label>
+          <input type="text" id="regInvite" required placeholder="如 ABCD-1234" style="text-transform:uppercase" />
+        </div>
+        <p class="hint">没有授权码无法注册。请向管理员（yclxp）索取一次性授权码。</p>
+        <button type="submit" class="btn btn-primary btn-block">提交注册</button>
+      </form>
+      <p id="authMsg" class="auth-msg" aria-live="polite"></p>
+    </div>
+  </div>
+
+  <div class="app" id="appRoot" hidden>
     <header class="topbar">
       <div class="brand">
         <span class="brand-icon">📷</span>
@@ -29,6 +76,7 @@
         </div>
       </div>
       <div class="top-actions">
+        <div id="authUserBar" class="auth-user-bar"></div>
         <button type="button" id="btnNew" class="btn btn-ghost" title="新建">新建</button>
         <button type="button" id="btnExport" class="btn btn-primary" disabled>导出图片</button>
       </div>
@@ -159,6 +207,38 @@
         </div>
       </aside>
     </main>
+  </div><!-- /#appRoot -->
+
+  <!-- 管理员：授权码与用户 -->
+  <div class="modal" id="adminModal" hidden>
+    <div class="modal-backdrop" data-close-admin></div>
+    <div class="modal-card modal-card-admin">
+      <div class="map-modal-head">
+        <div>
+          <h2>授权管理</h2>
+          <p class="hint">生成一次性授权码发给需要注册的人；可禁用用户。</p>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-admin>关闭</button>
+      </div>
+      <section class="admin-section">
+        <h3>生成授权码</h3>
+        <div class="admin-gen-row">
+          <label>数量 <input type="number" id="inviteCount" min="1" max="20" value="1" /></label>
+          <label>有效天数 <input type="number" id="inviteDays" min="0" max="365" value="30" title="0 表示不过期" /></label>
+          <input type="text" id="inviteNote" placeholder="备注（可选）" />
+          <button type="button" id="btnGenInvite" class="btn btn-primary btn-sm">生成</button>
+        </div>
+        <p id="adminInviteMsg" class="auth-msg"></p>
+      </section>
+      <section class="admin-section">
+        <h3>授权码列表</h3>
+        <div id="adminInvitesList" class="admin-list"></div>
+      </section>
+      <section class="admin-section">
+        <h3>用户列表</h3>
+        <div id="adminUsersList" class="admin-list"></div>
+      </section>
+    </div>
   </div>
 
   <!-- 类型编辑弹窗 -->
@@ -267,6 +347,7 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="auth.js"></script>
   <script src="app.js"></script>
   <script>
     // 注册 PWA Service Worker（file:// 与 Electron 下会跳过）

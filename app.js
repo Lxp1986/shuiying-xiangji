@@ -1239,11 +1239,46 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
+/**
+ * 让画布在预览区内完整显示（不滚动），等比缩放。
+ * canvas.width/height 仍为原图像素，仅改 CSS 显示尺寸；导出不受影响。
+ */
+function fitCanvasDisplay() {
+  if (!state.image) {
+    canvas.style.width = "";
+    canvas.style.height = "";
+    return;
+  }
+  const wrap = $("#canvasWrap");
+  if (!wrap) return;
+
+  const style = getComputedStyle(wrap);
+  const padX =
+    (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+  const padY =
+    (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+
+  const availW = Math.max(40, wrap.clientWidth - padX);
+  const availH = Math.max(40, wrap.clientHeight - padY);
+  const iw = state.image.naturalWidth || canvas.width;
+  const ih = state.image.naturalHeight || canvas.height;
+  if (!iw || !ih) return;
+
+  // 完整落入容器，不放大超过 100%（小图保持原大小观感可选：去掉 , 1 即允许放大）
+  const scale = Math.min(availW / iw, availH / ih, 1);
+  const dw = Math.max(1, Math.floor(iw * scale));
+  const dh = Math.max(1, Math.floor(ih * scale));
+  canvas.style.width = `${dw}px`;
+  canvas.style.height = `${dh}px`;
+}
+
 function redraw() {
   if (!state.image) {
     canvas.classList.remove("visible");
     emptyState.classList.remove("hidden");
     $("#btnExport").disabled = true;
+    canvas.style.width = "";
+    canvas.style.height = "";
     return;
   }
 
@@ -1252,8 +1287,11 @@ function redraw() {
   $("#btnExport").disabled = false;
 
   const img = state.image;
-  canvas.width = img.naturalWidth;
-  canvas.height = img.naturalHeight;
+  // 位图分辨率 = 原图（保证导出清晰）
+  if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+  }
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(img, 0, 0);
@@ -1266,6 +1304,8 @@ function redraw() {
   const oy = clamp(y, 0, Math.max(0, canvas.height - layout.height));
   drawWatermarkAt(ctx, ox, oy, layout);
   state._layout = { ...layout, x: ox, y: oy };
+
+  fitCanvasDisplay();
 }
 
 // —— 图片 / 导出 ——
@@ -1774,6 +1814,19 @@ function init() {
   $("#bannerColor").value = state.bannerColor;
   $("#textColor").value = state.textColor;
   bindEvents();
+
+  // 窗口 / 侧栏变化时重新适配画布显示
+  const wrap = $("#canvasWrap");
+  if (wrap && typeof ResizeObserver !== "undefined") {
+    let roTimer = null;
+    const ro = new ResizeObserver(() => {
+      clearTimeout(roTimer);
+      roTimer = setTimeout(() => fitCanvasDisplay(), 40);
+    });
+    ro.observe(wrap);
+  }
+  window.addEventListener("resize", () => fitCanvasDisplay());
+
   if (document.fonts?.ready) document.fonts.ready.then(() => redraw());
 }
 
