@@ -4,3 +4,8 @@
 .vscode/
 node_modules/
 .cache/
+release/
+dist/
+*.dmg
+*.exe
+*.AppImage

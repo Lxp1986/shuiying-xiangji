@@ -1,0 +1,59 @@
+{
+  "name": "shuiying-xiangji",
+  "version": "1.0.0",
+  "description": "工程水印相机：现场照片叠加可自定义工程记录水印",
+  "main": "desktop/main.js",
+  "author": "Lxp1986",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "ELECTRON_RUN_AS_NODE= electron .",
+    "dev": "ELECTRON_RUN_AS_NODE= electron .",
+    "pack": "ELECTRON_RUN_AS_NODE= electron-builder --dir",
+    "dist": "ELECTRON_RUN_AS_NODE= electron-builder",
+    "dist:mac": "ELECTRON_RUN_AS_NODE= electron-builder --mac",
+    "dist:win": "ELECTRON_RUN_AS_NODE= electron-builder --win",
+    "dist:linux": "ELECTRON_RUN_AS_NODE= electron-builder --linux"
+  },
+  "build": {
+    "appId": "com.lxp1986.shuiyingxiangji",
+    "productName": "工程水印相机",
+    "copyright": "Copyright © 2026",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "index.html",
+      "styles.css",
+      "app.js",
+      "manifest.webmanifest",
+      "sw.js",
+      "icons/**/*",
+      "desktop/**/*",
+      "README.md"
+    ],
+    "mac": {
+      "category": "public.app-category.photography",
+      "icon": "icons/icon-1024.png",
+      "target": ["dmg", "zip"],
+      "darkModeSupport": true
+    },
+    "win": {
+      "icon": "icons/icon-512.png",
+      "target": ["nsis", "portable"]
+    },
+    "linux": {
+      "icon": "icons/icon-512.png",
+      "target": ["AppImage", "deb"],
+      "category": "Graphics"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^35.1.2",
+    "electron-builder": "^25.1.8"
+  }
+}
