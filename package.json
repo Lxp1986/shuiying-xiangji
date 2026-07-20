@@ -1,7 +1,7 @@
 {
   "name": "shuiying-xiangji",
-  "version": "1.1.0",
-  "description": "施工影像办公：水印、施工前后排版、导出 Word",
+  "version": "1.2.0",
+  "description": "现场图片工具：水印、现场图片报告、导出 Word",
   "main": "desktop/main.js",
   "author": "Lxp1986",
   "license": "MIT",
@@ -21,7 +21,7 @@
   },
   "build": {
     "appId": "com.lxp1986.shuiyingxiangji",
-    "productName": "施工影像办公",
+    "productName": "现场图片工具",
     "copyright": "Copyright © 2026",
     "directories": {
       "output": "release"
@@ -42,7 +42,12 @@
       "icon": "icons/icon-1024.png",
       "target": ["dmg", "zip"],
       "darkModeSupport": true,
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "extendInfo": {
+        "NSLocationWhenInUseUsageDescription": "用于获取现场经纬度与地址信息，写入图片水印。",
+        "NSLocationUsageDescription": "用于获取现场经纬度与地址信息，写入图片水印。",
+        "NSCameraUsageDescription": "用于拍摄施工现场照片。"
+      }
     },
     "win": {
       "icon": "icons/icon-512.png",

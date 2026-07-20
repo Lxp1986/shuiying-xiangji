@@ -144,7 +144,7 @@ function renderBlockHtml(b) {
   if (b.type === "heading") {
     return `<div class="report-block ${sel}" data-id="${b.id}" data-type="heading" draggable="true">
       <span class="block-handle" title="拖动">⋮⋮</span>
-      <div class="report-heading" contenteditable="true" data-role="text">${escapeHtml(b.text || "报告标题")}</div>
+      <div class="report-heading" contenteditable="true" data-role="text">${escapeHtml(b.text || "标题")}</div>
     </div>`;
   }
   if (b.type === "label") {
@@ -283,9 +283,9 @@ function insertCompareGroup() {
   insertBlocks(
     [
       { id: uid(), type: "label", text: "施工前：" },
-      emptyPhoto(),
+      emptyPhotoWithInherit(),
       { id: uid(), type: "label", text: "施工后：" },
-      emptyPhoto(),
+      emptyPhotoWithInherit(),
     ],
     reportState.selectedId
   );
@@ -306,25 +306,73 @@ function insertPhoto() {
   insertBlocks([emptyPhoto()], reportState.selectedId);
 }
 
-/** 像 Word 一样新开一页，并放一组前后对比骨架 */
+/** 取上一张带水印快照的图片配置，并清空时间/天气/地址/经纬度（其它文字保留） */
+function inheritWmSnapshotFromPrev() {
+  const blocks = reportState.doc.blocks;
+  let src = null;
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i];
+    if (b.type === "photo" && b.wmSnapshot) {
+      src = b.wmSnapshot;
+      break;
+    }
+  }
+  if (!src && window.SyWatermark?.getSnapshot) {
+    src = window.SyWatermark.getSnapshot();
+  }
+  if (!src) return null;
+  const snap = JSON.parse(JSON.stringify(src));
+  const fields = snap.fields || [];
+  const shouldClear = (f) => {
+    const label = String(f.label || "").replace(/\s/g, "");
+    const key = String(f.key || "");
+    const auto = f.auto || "";
+    if (["datetime", "weather", "address", "lng", "lat"].includes(auto)) return true;
+    if (/时间|日期/.test(label) || key === "time") return true;
+    if (/天气/.test(label) || key === "weather") return true;
+    if (/地址|地点/.test(label) || key === "address") return true;
+    if (/经度/.test(label) || key === "lng") return true;
+    if (/纬度/.test(label) || key === "lat") return true;
+    return false;
+  };
+  if (!snap.fieldValues) snap.fieldValues = {};
+  for (const f of fields) {
+    if (shouldClear(f)) snap.fieldValues[f.key] = "";
+  }
+  return snap;
+}
+
+function lastHeadingText() {
+  const blocks = reportState.doc.blocks;
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    if (blocks[i].type === "heading" && blocks[i].text) return blocks[i].text;
+  }
+  return "";
+}
+
+function emptyPhotoWithInherit() {
+  const p = emptyPhoto();
+  p.wmSnapshot = inheritWmSnapshotFromPrev();
+  return p;
+}
+
+/** 像 Word 一样新开一页；标题与其它文字继承上页，时间/定位/天气留空 */
 function insertNextPage() {
   flushWmToSelected();
-  const pageBreak = { id: uid(), type: "pageBreak" };
+  const heading = lastHeadingText() || "";
   const group = [
-    pageBreak,
-    { id: uid(), type: "heading", text: reportState.doc.title || "续页", align: "center", underline: true },
+    { id: uid(), type: "pageBreak" },
+    { id: uid(), type: "heading", text: heading, align: "center", underline: true },
     { id: uid(), type: "label", text: "施工前：" },
-    emptyPhoto(),
+    emptyPhotoWithInherit(),
     { id: uid(), type: "label", text: "施工后：" },
-    emptyPhoto(),
+    emptyPhotoWithInherit(),
   ];
-  // 追加到文末
   reportState.doc.blocks.push(...group);
   reportState.selectedId = group[group.length - 1].id;
   saveDoc();
   renderPaper();
   selectBlock(reportState.selectedId);
-  // 滚到新页
   requestAnimationFrame(() => {
     const pages = document.querySelectorAll(".report-paper");
     pages[pages.length - 1]?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -507,7 +555,7 @@ async function exportDocx() {
             spacing: { after: 120, before: firstPage ? 40 : 80 },
             children: [
               new TextRun({
-                text: b.text || reportState.doc.title || "施工报告",
+                text: b.text || "标题",
                 bold: true,
                 size: 32,
                 font: "Microsoft YaHei",
@@ -596,12 +644,13 @@ async function exportDocx() {
     });
 
     const blob = await Packer.toBlob(doc);
-    const title =
+    // 文件名 = 文档「文件名」字段；无则用首个标题
+    const fileBase =
       reportState.doc.title ||
       reportState.doc.blocks.find((x) => x.type === "heading")?.text ||
-      "施工报告";
-    const safe = String(title).replace(/[\\/:*?"<>|]/g, "_") || "施工报告";
-    const name = `${safe}_${new Date().toISOString().slice(0, 10)}.docx`;
+      "现场图片报告";
+    const safe = String(fileBase).replace(/[\\/:*?"<>|]/g, "_").trim() || "现场图片报告";
+    const name = `${safe}.docx`;
 
     if (window.syDesktop?.saveBlob) {
       await window.syDesktop.saveBlob(blob, name);

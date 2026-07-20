@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="水印相机" />
   <meta name="description" content="施工现场照片叠加工程记录水印" />
-  <title>施工影像办公</title>
+  <title>现场图片工具</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-512.png" />
@@ -26,13 +26,13 @@
       <div class="brand">
         <span class="brand-icon">📷</span>
         <div>
-          <h1>施工影像办公</h1>
-          <p>水印 · 施工报告 · Word 导出</p>
+          <h1>现场图片工具</h1>
+          <p>水印 · 现场图片报告 · Word 导出</p>
         </div>
       </div>
       <div class="mode-switch" id="modeSwitch" role="tablist">
         <button type="button" class="mode-btn" data-mode="watermark">水印工具</button>
-        <button type="button" class="mode-btn active" data-mode="report">施工报告</button>
+        <button type="button" class="mode-btn active" data-mode="report">现场图片报告</button>
       </div>
       <div class="top-actions">
         <div id="authUserBar" class="auth-user-bar"></div>
@@ -41,7 +41,7 @@
           <button type="button" id="btnExport" class="btn btn-primary" disabled>导出图片</button>
         </span>
         <span id="reportActions" class="mode-actions">
-          <button type="button" id="btnReportNew" class="btn btn-ghost">新建报告</button>
+          <button type="button" id="btnReportNew" class="btn btn-ghost">新建</button>
           <button type="button" id="btnExportDocx" class="btn btn-primary">导出 Word</button>
         </span>
       </div>
@@ -185,7 +185,7 @@
           <button type="button" class="btn btn-ghost btn-sm" id="btnInsertLabel">+ 文字</button>
           <button type="button" class="btn btn-ghost btn-sm" id="btnInsertPhoto">+ 图片</button>
           <button type="button" class="btn btn-primary btn-sm" id="btnInsertPage">+ 下一页</button>
-          <span class="muted report-hint">像 Word 一样连续加页 · 选中图片可在右侧改水印</span>
+          <span class="muted report-hint">连续加页 · 选中图片可在右侧改水印</span>
         </div>
         <div class="report-scroll" id="reportScroll">
           <div class="report-pages" id="reportPages" aria-label="报告编辑区"></div>
@@ -195,15 +195,15 @@
         <div class="report-side-head">
           <h3 class="report-side-title">文档与块</h3>
           <div class="field">
-            <label>报告标题</label>
-            <input type="text" id="reportDocTitle" placeholder="如：竹山水渠清理" />
+            <label>文件名</label>
+            <input type="text" id="reportDocTitle" placeholder="导出 Word 时的文件名" />
           </div>
         </div>
-        <p class="hint" id="reportBlockHint">选中文档中的<strong>图片块</strong>，下方出现完整水印编辑工具</p>
+        <p class="hint" id="reportBlockHint">选中文档中的<strong>图片块</strong>，下方可编辑水印；选中标题/文字块可改<strong>标题</strong></p>
         <div id="reportBlockEditor" class="report-block-editor" hidden>
           <div class="field" id="blockTextField">
-            <label>文字内容</label>
-            <input type="text" id="blockTextInput" />
+            <label>标题</label>
+            <input type="text" id="blockTextInput" placeholder="文档中显示的标题文字" />
           </div>
           <div class="field" id="blockPhotoField" hidden>
             <label>本页图片</label>

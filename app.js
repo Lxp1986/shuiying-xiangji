@@ -627,6 +627,11 @@ async function updateWeatherFromState({ silent = false } = {}) {
 
 // —— 逆地理 / 搜索（Nominatim） ——
 async function reverseGeocode(lat, lng) {
+  // 桌面 App：走主进程，避免 file:// CORS / 缺 UA 导致定位地址失败
+  if (window.syDesktop?.reverseGeocode) {
+    const data = await window.syDesktop.reverseGeocode(lat, lng);
+    return formatAddress(data);
+  }
   const url =
     `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}` +
     `&accept-language=zh-CN&addressdetails=1`;
@@ -658,6 +663,9 @@ function formatAddress(data) {
 }
 
 async function searchPlaces(q) {
+  if (window.syDesktop?.searchPlaces) {
+    return window.syDesktop.searchPlaces(q);
+  }
   const url =
     `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}` +
     `&limit=6&accept-language=zh-CN&addressdetails=1`;
@@ -1052,18 +1060,28 @@ async function confirmLoc() {
   await updateWeatherFromState();
 }
 
+function geolocationErrorMessage(err) {
+  if (!err) return "请检查系统定位权限";
+  // GeolocationPositionError codes
+  if (err.code === 1) return "定位权限被拒绝，请在系统设置中允许本应用使用位置";
+  if (err.code === 2) return "暂时无法获取位置，请检查网络或稍后重试";
+  if (err.code === 3) return "定位超时，请到室外或打开「精确位置」后重试";
+  return err.message || "请检查定位权限与网络";
+}
+
 async function applyCurrentGps() {
   if (!navigator.geolocation) {
     alert("当前环境不支持定位");
     return;
   }
   setStatus("正在获取当前位置…");
-  $("#btnFillGps").disabled = true;
+  if ($("#btnFillGps")) $("#btnFillGps").disabled = true;
   try {
     const pos = await new Promise((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, {
         enableHighAccuracy: true,
-        timeout: 15000,
+        timeout: 20000,
+        maximumAge: 0,
       });
     });
     const lng = pos.coords.longitude;
@@ -1075,16 +1093,19 @@ async function applyCurrentGps() {
     try {
       const addr = await reverseGeocode(lat, lng);
       setFieldValueByRole("address", addr);
-    } catch {
-      /* 地址失败不影响坐标 */
+      setStatus(`定位成功：${addr || `${lat.toFixed(5)}, ${lng.toFixed(5)}`}`, "ok");
+    } catch (e) {
+      setStatus("已获取坐标，地址解析失败（可手动改地址）", "error");
     }
     renderFieldsEditor();
     redraw();
-    await updateWeatherFromState();
+    await updateWeatherFromState({ silent: true });
   } catch (err) {
-    setStatus("定位失败：" + (err.message || "请检查权限"), "error");
+    console.error(err);
+    setStatus("定位失败：" + geolocationErrorMessage(err), "error");
+    alert("定位失败：\n" + geolocationErrorMessage(err));
   } finally {
-    $("#btnFillGps").disabled = false;
+    if ($("#btnFillGps")) $("#btnFillGps").disabled = false;
   }
 }
 
@@ -1940,13 +1961,15 @@ function bindEvents() {
       const pos = await new Promise((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
           enableHighAccuracy: true,
-          timeout: 15000,
+          timeout: 20000,
+          maximumAge: 0,
         });
       });
       await setPendingFromLatLng(pos.coords.latitude, pos.coords.longitude);
       map?.setView([pos.coords.latitude, pos.coords.longitude], MAP_DEFAULT_ZOOM);
     } catch (err) {
-      alert("定位失败：" + (err.message || ""));
+      console.error(err);
+      alert("定位失败：\n" + geolocationErrorMessage(err));
     } finally {
       $("#btnLocGps").textContent = "定位";
     }

@@ -1,6 +1,8 @@
-const { app, BrowserWindow, shell, Menu, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, shell, Menu, dialog, ipcMain, session } = require("electron");
 const path = require("path");
 const fs = require("fs");
+
+const GEO_UA = "XianChangTuPianGongJu/1.2 (desktop; field photo tool)";
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -8,7 +10,7 @@ function createWindow() {
     height: 900,
     minWidth: 960,
     minHeight: 640,
-    title: "施工影像办公",
+    title: "现场图片工具",
     backgroundColor: "#0f1419",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -18,7 +20,7 @@ function createWindow() {
     },
   });
 
-  // 桌面独立版入口（无 Cloudflare 登录；含水印+报告）
+  // 桌面独立版入口（无 Cloudflare；含水印 + 现场图片报告）
   const indexPath = path.join(__dirname, "..", "office.html");
   win.loadFile(indexPath);
 
@@ -97,7 +99,7 @@ function buildMenu() {
 ipcMain.handle("dialog:save-blob", async (event, { name, base64 }) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   const { filePath, canceled } = await dialog.showSaveDialog(win, {
-    defaultPath: name || "施工报告.docx",
+    defaultPath: name || "现场图片报告.docx",
     filters: [{ name: "Word 文档", extensions: ["docx"] }],
   });
   if (canceled || !filePath) return { ok: false, canceled: true };
@@ -106,7 +108,43 @@ ipcMain.handle("dialog:save-blob", async (event, { name, base64 }) => {
   return { ok: true, path: filePath };
 });
 
+/** 主进程请求地理编码（绕过 file:// CORS，并带合法 User-Agent） */
+ipcMain.handle("geo:reverse", async (_e, { lat, lng }) => {
+  const url =
+    `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}` +
+    `&accept-language=zh-CN&addressdetails=1`;
+  const res = await fetch(url, {
+    headers: { Accept: "application/json", "User-Agent": GEO_UA },
+  });
+  if (!res.ok) throw new Error(`逆地理 ${res.status}`);
+  return res.json();
+});
+
+ipcMain.handle("geo:search", async (_e, { q }) => {
+  const url =
+    `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}` +
+    `&limit=6&accept-language=zh-CN&addressdetails=1`;
+  const res = await fetch(url, {
+    headers: { Accept: "application/json", "User-Agent": GEO_UA },
+  });
+  if (!res.ok) throw new Error(`搜索 ${res.status}`);
+  return res.json();
+});
+
 app.whenReady().then(() => {
+  // 允许页面申请定位权限（macOS / Windows）
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    if (permission === "geolocation" || permission === "media") {
+      callback(true);
+      return;
+    }
+    callback(false);
+  });
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
+    if (permission === "geolocation" || permission === "media") return true;
+    return false;
+  });
+
   buildMenu();
   createWindow();
   app.on("activate", () => {

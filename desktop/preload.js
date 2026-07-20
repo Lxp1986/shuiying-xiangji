@@ -15,4 +15,10 @@ contextBridge.exposeInMainWorld("syDesktop", {
   onExportDocx(cb) {
     ipcRenderer.on("menu:export-docx", () => cb && cb());
   },
+  reverseGeocode(lat, lng) {
+    return ipcRenderer.invoke("geo:reverse", { lat, lng });
+  },
+  searchPlaces(q) {
+    return ipcRenderer.invoke("geo:search", { q });
+  },
 });
