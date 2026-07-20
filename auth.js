@@ -92,6 +92,13 @@
   }
 
   async function refreshMe() {
+    // Electron / 本地 file 打开：离线桌面模式，跳过云端登录
+    if (location.protocol === "file:" || window.syDesktop) {
+      currentUser = { id: "local", username: "本地", role: "admin", status: "active" };
+      window.__currentUser = currentUser;
+      showApp();
+      return true;
+    }
     try {
       const data = await api("/api/me");
       if (data.ok && data.user) {
@@ -101,14 +108,10 @@
         return true;
       }
     } catch (_) {
-      /* 本地无 API 时放行？生产必须登录 */
+      /* 网络失败 */
     }
     currentUser = null;
     window.__currentUser = null;
-    // 本地 file / 无 functions 开发：可检测
-    if (location.protocol === "file:") {
-      setAuthMsg("请通过部署站点或本地 Pages 预览使用登录功能", "error");
-    }
     showGate("login");
     return false;
   }

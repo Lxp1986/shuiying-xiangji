@@ -6,7 +6,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/dist-web"
 rm -rf "$OUT"
 mkdir -p "$OUT/icons"
-cp "$ROOT/index.html" "$ROOT/styles.css" "$ROOT/app.js" "$ROOT/auth.js" \
+cp "$ROOT/index.html" "$ROOT/styles.css" "$ROOT/report.css" \
+  "$ROOT/app.js" "$ROOT/auth.js" "$ROOT/report.js" \
   "$ROOT/manifest.webmanifest" "$ROOT/sw.js" "$OUT/"
 cp "$ROOT/icons/"*.png "$OUT/icons/"
 echo "Prepared $OUT"

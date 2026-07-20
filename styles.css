@@ -280,6 +280,7 @@ button, input, select {
   border-bottom: 1px solid var(--border);
   gap: 16px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .brand {
@@ -307,6 +308,9 @@ button, input, select {
 .top-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 /* Layout */

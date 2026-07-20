@@ -1422,6 +1422,145 @@ function exportImage() {
   a.click();
 }
 
+/** 供施工报告模块调用：快照 / 离屏合成水印（不改变当前画布图） */
+function getWatermarkSnapshot() {
+  const type = getCurrentType();
+  return {
+    title: state.title,
+    subtitle: state.subtitle,
+    fieldValues: { ...state.fieldValues },
+    fields: (type?.fields || []).map((f) => ({
+      key: f.key,
+      label: f.label,
+    })),
+    typeId: state.typeId,
+    scale: state.scale,
+    fontScale: state.fontScale,
+    boxOpacity: state.boxOpacity,
+    textOpacity: state.textOpacity,
+    radius: state.radius,
+    position: state.position,
+    margin: state.margin,
+    headerColor: state.headerColor,
+    bannerColor: state.bannerColor,
+    textColor: state.textColor,
+    offsetX: state.offsetX,
+    offsetY: state.offsetY,
+  };
+}
+
+function applySnapshotToState(snap) {
+  if (!snap) return () => {};
+  const backup = getWatermarkSnapshot();
+  state.title = snap.title ?? state.title;
+  state.subtitle = snap.subtitle ?? state.subtitle;
+  state.fieldValues = { ...(snap.fieldValues || {}) };
+  state.scale = snap.scale ?? state.scale;
+  state.fontScale = snap.fontScale ?? state.fontScale;
+  state.boxOpacity = snap.boxOpacity ?? state.boxOpacity;
+  state.textOpacity = snap.textOpacity ?? state.textOpacity;
+  state.radius = snap.radius ?? state.radius;
+  state.position = snap.position ?? state.position;
+  state.margin = snap.margin ?? state.margin;
+  state.headerColor = snap.headerColor ?? state.headerColor;
+  state.bannerColor = snap.bannerColor ?? state.bannerColor;
+  state.textColor = snap.textColor ?? state.textColor;
+  state.offsetX = snap.offsetX ?? 0;
+  state.offsetY = snap.offsetY ?? 0;
+  // 临时覆盖类型字段标签（measure 读 getCurrentType）
+  const type = getCurrentType();
+  const labelBackup = type ? type.fields.map((f) => ({ key: f.key, label: f.label })) : [];
+  if (type && Array.isArray(snap.fields)) {
+    for (const sf of snap.fields) {
+      const f = type.fields.find((x) => x.key === sf.key);
+      if (f && sf.label != null) f.label = sf.label;
+    }
+  }
+  return () => {
+    state.title = backup.title;
+    state.subtitle = backup.subtitle;
+    state.fieldValues = backup.fieldValues;
+    state.scale = backup.scale;
+    state.fontScale = backup.fontScale;
+    state.boxOpacity = backup.boxOpacity;
+    state.textOpacity = backup.textOpacity;
+    state.radius = backup.radius;
+    state.position = backup.position;
+    state.margin = backup.margin;
+    state.headerColor = backup.headerColor;
+    state.bannerColor = backup.bannerColor;
+    state.textColor = backup.textColor;
+    state.offsetX = backup.offsetX;
+    state.offsetY = backup.offsetY;
+    if (type) {
+      for (const lb of labelBackup) {
+        const f = type.fields.find((x) => x.key === lb.key);
+        if (f) f.label = lb.label;
+      }
+    }
+  };
+}
+
+/**
+ * 将图片 dataURL + 水印快照合成为 JPEG dataURL
+ * @param {string} imageDataUrl
+ * @param {object} [snapshot]
+ * @param {number} [quality=0.92]
+ */
+async function composeWatermarkedDataUrl(imageDataUrl, snapshot, quality = 0.92) {
+  const img = await new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = reject;
+    im.src = imageDataUrl;
+  });
+
+  // 限制最长边，避免 Word 过大（预览/导出仍清晰）
+  const maxSide = 3200;
+  let tw = img.naturalWidth;
+  let th = img.naturalHeight;
+  const m = Math.max(tw, th);
+  if (m > maxSide) {
+    const s = maxSide / m;
+    tw = Math.round(tw * s);
+    th = Math.round(th * s);
+  }
+
+  const off = document.createElement("canvas");
+  off.width = tw;
+  off.height = th;
+  const octx = off.getContext("2d");
+  octx.drawImage(img, 0, 0, tw, th);
+
+  const restore = applySnapshotToState(snapshot || getWatermarkSnapshot());
+  // measureWatermark 使用主 canvas 的 ctx.font 测量——临时借用 octx
+  const prevCtx = ctx;
+  // 劫持：临时把全局测量用 octx（measure 内部用 ctx）
+  // 更稳妥：直接用主 ctx 测量（与字体无关画布）
+  try {
+    const shortSide = Math.min(off.width, off.height);
+    const baseUnit = shortSide / 900;
+    // measure 依赖全局 ctx —— 使用主 canvas 的 ctx 测量即可
+    const layout = measureWatermark(baseUnit);
+    const { x, y } = resolvePosition(off.width, off.height, layout.width, layout.height);
+    const ox = clamp(x, 0, Math.max(0, off.width - layout.width));
+    const oy = clamp(y, 0, Math.max(0, off.height - layout.height));
+    drawWatermarkAt(octx, ox, oy, layout);
+  } finally {
+    restore();
+  }
+
+  return off.toDataURL("image/jpeg", quality);
+}
+
+// 暴露给 report 模块 / 调试
+window.SyWatermark = {
+  getSnapshot: getWatermarkSnapshot,
+  composeDataUrl: composeWatermarkedDataUrl,
+  getState: () => state,
+};
+window.scheduleFitCanvas = scheduleFitCanvas;
+
 // —— 类型弹窗 ——
 function openTypeModal(type = null) {
   state.editingTypeId = type?.id || null;

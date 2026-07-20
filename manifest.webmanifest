@@ -1,7 +1,7 @@
 {
-  "name": "工程水印相机",
-  "short_name": "水印相机",
-  "description": "施工现场照片叠加工程记录水印，支持点选时间、卫星图定位与历史天气",
+  "name": "施工影像办公",
+  "short_name": "影像办公",
+  "description": "施工照片水印、前后对比排版、导出 Word",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
