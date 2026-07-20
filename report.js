@@ -140,7 +140,7 @@ function renderPaper() {
       if (b.type === "photo") {
         const img = b.previewUrl
           ? `<img class="report-photo" src="${b.previewUrl}" alt="施工图" />`
-          : `<div class="report-photo-empty">点击右侧「选择图片」或点此块后导入<br/><span class="muted">可勾选套用水印</span></div>`;
+          : `<div class="report-photo-empty">点击导入图片（在文档中直接显示）</div>`;
         return `<div class="report-block ${sel}" data-id="${b.id}" data-type="photo" draggable="true">
           <span class="block-handle" title="拖动排序">⋮⋮</span>
           <div class="report-photo-wrap">${img}</div>
@@ -401,19 +401,21 @@ async function exportDocx() {
   }
   try {
     const children = [];
-    const pageContentWidth = 500; // 约 A4 可用宽度 EMU 换算用像素宽（docx 用 px 近似）
+    // A4 内容区约 210mm - 2*5mm ≈ 200mm → 约 567 像素（96dpi 估算用较宽）
+    // 极窄页边距 ~5mm = 284 twips；图片尽量铺满版心并居中
+    const pageContentWidth = 620;
 
     for (const b of reportState.doc.blocks) {
       if (b.type === "heading") {
         children.push(
           new Paragraph({
             alignment: AlignmentType.CENTER,
-            spacing: { after: 300, before: 100 },
+            spacing: { after: 120, before: 40 },
             children: [
               new TextRun({
                 text: b.text || reportState.doc.title || "施工报告",
                 bold: true,
-                size: 36, // 18pt
+                size: 32,
                 font: "Microsoft YaHei",
                 underline: b.underline !== false ? {} : undefined,
               }),
@@ -423,12 +425,12 @@ async function exportDocx() {
       } else if (b.type === "label") {
         children.push(
           new Paragraph({
-            spacing: { before: 200, after: 120 },
+            spacing: { before: 80, after: 60 },
             children: [
               new TextRun({
                 text: b.text || "",
                 bold: true,
-                size: 24,
+                size: 22,
                 font: "Microsoft YaHei",
               }),
             ],
@@ -440,6 +442,7 @@ async function exportDocx() {
         if (!url) {
           children.push(
             new Paragraph({
+              alignment: AlignmentType.CENTER,
               children: [
                 new TextRun({
                   text: "（未插入图片）",
@@ -453,7 +456,6 @@ async function exportDocx() {
           );
           continue;
         }
-        // 导出前可再合成一次确保最新水印
         if (b.useWatermark && asset?.rawUrl && window.SyWatermark?.composeDataUrl) {
           try {
             const snap = b.wmSnapshot || window.SyWatermark.getSnapshot();
@@ -468,7 +470,8 @@ async function exportDocx() {
         const bytes = dataUrlToUint8Array(url);
         children.push(
           new Paragraph({
-            spacing: { after: 200 },
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 100 },
             children: [
               new ImageRun({
                 data: bytes,
@@ -485,16 +488,18 @@ async function exportDocx() {
       children.push(new Paragraph({ children: [new TextRun("空报告")] }));
     }
 
+    // 页边距约 5mm（1mm ≈ 56.7 twips → 5mm ≈ 284）
+    const tight = 284;
     const doc = new Document({
       sections: [
         {
           properties: {
             page: {
               margin: {
-                top: 720,
-                bottom: 720,
-                left: 720,
-                right: 720,
+                top: tight,
+                bottom: tight,
+                left: tight,
+                right: tight,
               },
             },
           },
