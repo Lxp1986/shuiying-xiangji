@@ -403,7 +403,10 @@ function showWmForPhoto(b) {
   const sec = $("#reportWmSection");
   if (sec) sec.hidden = false;
   dockWmPanel("report");
-  // 加载该图自己的水印快照到表单
+  // 续页图：确保日期/天气/经纬度仍为空后再灌入表单
+  if (b.inheritClearedGeoTime && b.wmSnapshot) {
+    b.wmSnapshot = scrubTimeWeatherLatLng(b.wmSnapshot);
+  }
   if (b.wmSnapshot && window.SyWatermark?.loadSnapshotToUI) {
     reportState._suppressWmLoad = true;
     window.SyWatermark.loadSnapshotToUI(b.wmSnapshot);
@@ -415,7 +418,15 @@ function flushWmToSelected() {
   const b = getBlock(reportState.selectedId);
   if (!b || b.type !== "photo") return;
   if (window.SyWatermark?.getSnapshot) {
-    b.wmSnapshot = window.SyWatermark.getSnapshot();
+    let snap = window.SyWatermark.getSnapshot();
+    // 续页块：用户若未手填，仍强制不带上旧的日期/天气/经纬度
+    if (b.inheritClearedGeoTime) {
+      snap = scrubTimeWeatherLatLng(snap);
+      // 若用户已手填时间/天气/经纬度，scrub 会清空——不对
+      // 仅在「尚未手填」时保持清空：用表单现值，不再二次 scrub
+      snap = window.SyWatermark.getSnapshot();
+    }
+    b.wmSnapshot = snap;
   }
 }
 
@@ -484,7 +495,44 @@ function insertPhoto() {
   insertBlocks([emptyPhoto()], reportState.selectedId);
 }
 
-/** 取上一张带水印快照的图片配置，并清空时间/天气/地址/经纬度（其它文字保留） */
+/**
+ * 判断字段是否属于「续页必须留空」：日期/时间、天气、经度、纬度
+ * （地址与其它施工内容等文字保留）
+ */
+function isTimeWeatherLatLngField(f) {
+  if (!f) return false;
+  const label = String(f.label || "").replace(/\s/g, "");
+  const key = String(f.key || "").toLowerCase();
+  const auto = String(f.auto || "");
+  if (["datetime", "weather", "lng", "lat"].includes(auto)) return true;
+  if (key === "time" || key === "weather" || key === "lng" || key === "lat") return true;
+  if (/时间|日期/.test(label)) return true;
+  if (/天气/.test(label)) return true;
+  if (/经度/.test(label)) return true;
+  if (/纬度/.test(label)) return true;
+  return false;
+}
+
+/** 清空快照中的日期/天气/经纬度，其它字段原样保留 */
+function scrubTimeWeatherLatLng(snap) {
+  if (!snap) return null;
+  const out = JSON.parse(JSON.stringify(snap));
+  if (!out.fieldValues) out.fieldValues = {};
+  const fields = out.fields || [];
+  for (const f of fields) {
+    if (isTimeWeatherLatLngField(f)) {
+      out.fieldValues[f.key] = "";
+    }
+  }
+  // 再扫一遍 fieldValues 的 key，防止 fields 列表不全
+  for (const k of Object.keys(out.fieldValues)) {
+    const f = fields.find((x) => x.key === k) || { key: k, label: k, auto: k };
+    if (isTimeWeatherLatLngField(f)) out.fieldValues[k] = "";
+  }
+  return out;
+}
+
+/** 取上一张图的水印配置：其它文字一致，日期/天气/经纬度留空 */
 function inheritWmSnapshotFromPrev() {
   const blocks = reportState.doc.blocks;
   let src = null;
@@ -498,26 +546,7 @@ function inheritWmSnapshotFromPrev() {
   if (!src && window.SyWatermark?.getSnapshot) {
     src = window.SyWatermark.getSnapshot();
   }
-  if (!src) return null;
-  const snap = JSON.parse(JSON.stringify(src));
-  const fields = snap.fields || [];
-  const shouldClear = (f) => {
-    const label = String(f.label || "").replace(/\s/g, "");
-    const key = String(f.key || "");
-    const auto = f.auto || "";
-    if (["datetime", "weather", "address", "lng", "lat"].includes(auto)) return true;
-    if (/时间|日期/.test(label) || key === "time") return true;
-    if (/天气/.test(label) || key === "weather") return true;
-    if (/地址|地点/.test(label) || key === "address") return true;
-    if (/经度/.test(label) || key === "lng") return true;
-    if (/纬度/.test(label) || key === "lat") return true;
-    return false;
-  };
-  if (!snap.fieldValues) snap.fieldValues = {};
-  for (const f of fields) {
-    if (shouldClear(f)) snap.fieldValues[f.key] = "";
-  }
-  return snap;
+  return scrubTimeWeatherLatLng(src);
 }
 
 function lastHeadingText() {
@@ -530,14 +559,17 @@ function lastHeadingText() {
 
 function emptyPhotoWithInherit() {
   const p = emptyPhoto();
+  // 继承上页水印文字；强制无日期/天气/经纬度
   p.wmSnapshot = inheritWmSnapshotFromPrev();
+  p.inheritClearedGeoTime = true;
   return p;
 }
 
-/** 像 Word 一样新开一页；标题与其它文字继承上页，时间/定位/天气留空 */
+/** 像 Word 一样新开一页；标题与其它文字继承上页，日期/天气/经纬度留空 */
 function insertNextPage() {
   flushWmToSelected();
   const heading = lastHeadingText() || "";
+  // 在 flush 之后再取继承，保证上一页最新水印文字已写入
   const group = [
     { id: uid(), type: "pageBreak" },
     { id: uid(), type: "heading", text: heading, align: "center", underline: true },
@@ -547,7 +579,9 @@ function insertNextPage() {
     emptyPhotoWithInherit(),
   ];
   reportState.doc.blocks.push(...group);
-  reportState.selectedId = group[group.length - 1].id;
+  // 选中续页第一张图，侧栏加载「已清空日期天气经纬度」的水印表单
+  const firstPhoto = group.find((b) => b.type === "photo");
+  reportState.selectedId = firstPhoto?.id || group[group.length - 1].id;
   saveDoc();
   renderPaper();
   selectBlock(reportState.selectedId);
@@ -637,10 +671,21 @@ async function assignPhotoToBlock(blockId, file) {
   };
   b.assetId = assetId;
   b.useWatermark = true;
-  b.wmSnapshot = window.SyWatermark?.getSnapshot?.() || null;
+  // 重要：续页已带继承快照时不要用当前表单覆盖（否则会带回上页日期/天气/经纬度）
+  if (!b.wmSnapshot) {
+    b.wmSnapshot = window.SyWatermark?.getSnapshot?.() || null;
+  } else if (b.inheritClearedGeoTime) {
+    b.wmSnapshot = scrubTimeWeatherLatLng(b.wmSnapshot);
+  }
 
   if (b.wmSnapshot && window.SyWatermark?.composeDataUrl) {
     try {
+      // 合成前灌入该图快照，避免用错全局表单
+      if (window.SyWatermark.loadSnapshotToUI) {
+        reportState._suppressWmLoad = true;
+        window.SyWatermark.loadSnapshotToUI(b.wmSnapshot);
+        reportState._suppressWmLoad = false;
+      }
       b.previewUrl = await window.SyWatermark.composeDataUrl(dataUrl, b.wmSnapshot);
     } catch {
       b.previewUrl = dataUrl;
@@ -667,13 +712,22 @@ async function liveUpdateSelectedPhoto() {
 
   reportState._liveBusy = true;
   try {
+    // 以当前表单为准（用户可补填日期/天气/经纬度）
     const snap = window.SyWatermark.getSnapshot();
     b.wmSnapshot = snap;
+    // 用户一旦手改过表单，取消「强制清空」标记
+    if (b.inheritClearedGeoTime) {
+      const fields = snap.fields || [];
+      const hasFilled = fields.some((f) => {
+        if (!isTimeWeatherLatLngField(f)) return false;
+        return String(snap.fieldValues?.[f.key] || "").trim() !== "";
+      });
+      if (hasFilled) b.inheritClearedGeoTime = false;
+    }
     b.useWatermark = true;
     const url = await window.SyWatermark.composeDataUrl(raw, snap, 0.9);
     b.previewUrl = url;
     asset.composedUrl = url;
-    // 仅更新 img，避免整页重绘丢焦点
     const img = document.querySelector(`.report-block[data-id="${b.id}"] img.report-photo`);
     if (img) img.src = url;
     else renderPaper();
