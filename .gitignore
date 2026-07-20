@@ -1,4 +1,5 @@
 .DS_Store
+**/.DS_Store
 *.log
 .idea/
 .vscode/
@@ -10,4 +11,7 @@ dist-web/
 *.dmg
 *.exe
 *.AppImage
+*.blockmap
 .wrangler/
+Thumbs.db
+*.xcuserstate
