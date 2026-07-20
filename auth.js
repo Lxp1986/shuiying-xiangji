@@ -92,13 +92,7 @@
   }
 
   async function refreshMe() {
-    // Electron / 本地 file 打开：离线桌面模式，跳过云端登录
-    if (location.protocol === "file:" || window.syDesktop) {
-      currentUser = { id: "local", username: "本地", role: "admin", status: "active" };
-      window.__currentUser = currentUser;
-      showApp();
-      return true;
-    }
+    // Web 版始终走云端登录（桌面请用 office.html，不加载本文件）
     try {
       const data = await api("/api/me");
       if (data.ok && data.user) {

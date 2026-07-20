@@ -672,10 +672,14 @@ function initReport() {
   if (!reportState.doc.blocks?.length) reportState.doc = defaultDoc();
   reportState.selectedId = reportState.doc.blocks[0]?.id || null;
   bindReportEvents();
-  // 默认水印模式
-  setMode("watermark");
 
-  // Electron 菜单：导出 Word
+  // 桌面 office.html 默认报告；网页若引入本脚本则默认水印
+  const isDesktopOffice =
+    document.body.classList.contains("desktop-app") ||
+    !!window.syDesktop?.saveBlob ||
+    location.pathname.endsWith("office.html");
+  setMode(isDesktopOffice ? "report" : "watermark");
+
   if (window.syDesktop?.onExportDocx) {
     window.syDesktop.onExportDocx(() => {
       setMode("report");

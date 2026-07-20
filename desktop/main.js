@@ -18,7 +18,8 @@ function createWindow() {
     },
   });
 
-  const indexPath = path.join(__dirname, "..", "index.html");
+  // 桌面独立版入口（无 Cloudflare 登录；含水印+报告）
+  const indexPath = path.join(__dirname, "..", "office.html");
   win.loadFile(indexPath);
 
   win.webContents.setWindowOpenHandler(({ url }) => {

@@ -6,83 +6,49 @@
   <meta name="theme-color" content="#1e6bb8" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="工程水印相机" />
+  <meta name="apple-mobile-web-app-title" content="水印相机" />
   <meta name="description" content="施工现场照片叠加工程记录水印" />
-  <title>工程水印相机</title>
+  <title>施工影像办公</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-512.png" />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="report.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 </head>
-<body>
-  <!-- 登录 / 注册门禁 -->
-  <div id="authGate" class="auth-gate">
-    <div class="auth-card">
-      <div class="auth-brand">
-        <span class="brand-icon">📷</span>
-        <h1>工程水印相机</h1>
-        <p>登录后使用 · 注册须管理员授权码</p>
-      </div>
-      <div class="auth-tabs">
-        <button type="button" class="auth-mode-btn active" data-mode="login">登录</button>
-        <button type="button" class="auth-mode-btn" data-mode="register">注册</button>
-      </div>
-      <form id="authLoginForm" class="auth-form">
-        <div class="field">
-          <label>用户名</label>
-          <input type="text" id="loginUsername" autocomplete="username" required placeholder="用户名" />
-        </div>
-        <div class="field">
-          <label>密码</label>
-          <input type="password" id="loginPassword" autocomplete="current-password" required placeholder="密码" />
-        </div>
-        <button type="submit" class="btn btn-primary btn-block">登录</button>
-      </form>
-      <form id="authRegisterForm" class="auth-form" hidden>
-        <div class="field">
-          <label>用户名</label>
-          <input type="text" id="regUsername" autocomplete="username" required placeholder="2–32 位" />
-        </div>
-        <div class="field">
-          <label>密码</label>
-          <input type="password" id="regPassword" autocomplete="new-password" required placeholder="至少 8 位" />
-        </div>
-        <div class="field">
-          <label>确认密码</label>
-          <input type="password" id="regPassword2" autocomplete="new-password" required placeholder="再输入一次" />
-        </div>
-        <div class="field">
-          <label>管理员授权码 <span class="muted">（必填）</span></label>
-          <input type="text" id="regInvite" required placeholder="如 ABCD-1234" style="text-transform:uppercase" />
-        </div>
-        <p class="hint">没有授权码无法注册。请向管理员（yclxp）索取一次性授权码。</p>
-        <button type="submit" class="btn btn-primary btn-block">提交注册</button>
-      </form>
-      <p id="authMsg" class="auth-msg" aria-live="polite"></p>
-    </div>
-  </div>
-
-  <div class="app" id="appRoot" hidden>
+<body class="desktop-app">
+  <!-- 桌面独立版：无云端登录 -->
+  <div class="app app-desktop" id="appRoot">
     <header class="topbar">
       <div class="brand">
         <span class="brand-icon">📷</span>
         <div>
-          <h1>工程水印相机</h1>
-          <p>施工记录 · 可自定义水印</p>
+          <h1>施工影像办公</h1>
+          <p>水印 · 施工报告 · Word 导出</p>
         </div>
+      </div>
+      <div class="mode-switch" id="modeSwitch" role="tablist">
+        <button type="button" class="mode-btn" data-mode="watermark">水印工具</button>
+        <button type="button" class="mode-btn active" data-mode="report">施工报告</button>
       </div>
       <div class="top-actions">
         <div id="authUserBar" class="auth-user-bar"></div>
-        <button type="button" id="btnNew" class="btn btn-ghost" title="新建">新建</button>
-        <button type="button" id="btnExport" class="btn btn-primary" disabled>导出图片</button>
+        <span id="watermarkActions" class="mode-actions" hidden>
+          <button type="button" id="btnNew" class="btn btn-ghost" title="新建">新建</button>
+          <button type="button" id="btnExport" class="btn btn-primary" disabled>导出图片</button>
+        </span>
+        <span id="reportActions" class="mode-actions">
+          <button type="button" id="btnReportNew" class="btn btn-ghost">新建报告</button>
+          <button type="button" id="btnExportDocx" class="btn btn-primary">导出 Word</button>
+        </span>
       </div>
     </header>
 
-    <main class="layout" id="modeWatermark">
+    <!-- ===== 水印模式 ===== -->
+    <main class="layout mode-panel" id="modeWatermark" hidden>
       <!-- 预览区 -->
       <section class="preview-panel">
         <div class="preview-toolbar">
@@ -208,6 +174,56 @@
       </aside>
     </main>
 
+    <!-- ===== 施工报告模式 ===== -->
+    <main class="layout report-layout mode-panel" id="modeReport">
+      <section class="report-workspace">
+        <div class="report-toolbar">
+          <button type="button" class="btn btn-secondary btn-sm" id="btnInsertCompare">+ 前后对比组</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnInsertHeading">+ 标题</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnInsertLabel">+ 文字</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnInsertPhoto">+ 图片</button>
+          <span class="muted report-hint">连续编辑 · 可拖拽排序 · 导出 Word</span>
+        </div>
+        <div class="report-scroll" id="reportScroll">
+          <article class="report-paper" id="reportPaper" aria-label="报告编辑区"></article>
+        </div>
+      </section>
+      <aside class="controls-panel report-side">
+        <h3 class="report-side-title">块属性</h3>
+        <p class="hint" id="reportBlockHint">选中纸上的块以编辑</p>
+        <div id="reportBlockEditor" class="report-block-editor" hidden>
+          <div class="field">
+            <label>文字内容</label>
+            <input type="text" id="blockTextInput" />
+          </div>
+          <div class="field" id="blockPhotoField" hidden>
+            <label>图片</label>
+            <label class="btn btn-secondary btn-sm file-btn">
+              <input type="file" id="blockPhotoInput" accept="image/*" hidden />
+              选择 / 替换图片
+            </label>
+            <label class="check-row">
+              <input type="checkbox" id="blockWmCheck" checked />
+              套用当前水印配置
+            </label>
+            <button type="button" id="btnApplyWmToBlock" class="btn btn-ghost btn-sm">用水印工具当前内容刷新本图</button>
+          </div>
+          <div class="field-row-actions">
+            <button type="button" id="btnBlockUp" class="btn btn-ghost btn-sm">上移</button>
+            <button type="button" id="btnBlockDown" class="btn btn-ghost btn-sm">下移</button>
+            <button type="button" id="btnBlockDup" class="btn btn-ghost btn-sm">复制</button>
+            <button type="button" id="btnBlockDel" class="btn btn-ghost btn-sm danger-text">删除</button>
+          </div>
+        </div>
+        <hr class="report-sep" />
+        <h3 class="report-side-title">文档</h3>
+        <div class="field">
+          <label>报告标题（页眉用）</label>
+          <input type="text" id="reportDocTitle" placeholder="如：竹山水渠清理" />
+        </div>
+        <p class="hint">提示：先在「水印工具」配好字段与样式，再到报告里给图片勾选「套用水印」。</p>
+      </aside>
+    </main>
   </div><!-- /#appRoot -->
 
   <!-- 管理员：授权码与用户 -->
@@ -348,8 +364,17 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="auth.js"></script>
+  <script>
+    // 桌面离线：跳过登录
+    window.syDesktop = window.syDesktop || {};
+    window.__currentUser = { id: "local", username: "本地", role: "admin", status: "active" };
+  </script>
   <script src="app.js"></script>
+  <script type="module" src="report.js"></script>
+  <script>
+    // 确保主界面可见
+    document.getElementById("appRoot")?.removeAttribute("hidden");
+  </script>
   <script>
     // 注册 PWA Service Worker（file:// 与 Electron 下会跳过）
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {

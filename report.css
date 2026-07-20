@@ -1,5 +1,19 @@
 /* 施工报告模式 */
 
+/* 关键：.layout { display:grid } 会覆盖 [hidden]，导致双模式叠层 */
+.mode-panel[hidden],
+main[hidden],
+#modeWatermark[hidden],
+#modeReport[hidden],
+.mode-actions[hidden] {
+  display: none !important;
+}
+
+.mode-panel {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
 .mode-switch {
   display: inline-flex;
   border: 1px solid var(--border);
@@ -30,7 +44,21 @@
 }
 
 .report-layout {
-  grid-template-columns: minmax(0, 1fr) 300px;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 桌面：报告占满主区，绝不与水印棋盘同屏 */
+.desktop-app #modeReport:not([hidden]) {
+  display: grid !important;
+}
+
+.desktop-app #modeWatermark:not([hidden]) {
+  display: grid !important;
 }
 
 .report-workspace {
@@ -40,7 +68,7 @@
   min-height: 0;
   overflow: hidden;
   /* 浅灰办公背景，突出白纸文档本身，无「画布棋盘」感 */
-  background: #c8cdd3;
+  background: #b8bec6;
 }
 
 .report-toolbar {
