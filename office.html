@@ -72,8 +72,9 @@
         </div>
       </section>
 
-      <!-- 控制区 -->
-      <aside class="controls-panel">
+      <!-- 控制区（可拖到报告侧栏复用） -->
+      <aside class="controls-panel" id="wmControlsHome">
+        <div id="wmSharedControls">
         <div class="tabs">
           <button type="button" class="tab active" data-tab="content">内容</button>
           <button type="button" class="tab" data-tab="style">样式</button>
@@ -171,10 +172,11 @@
           <div id="typesList" class="types-list"></div>
           <button type="button" id="btnNewType" class="btn btn-secondary btn-block">+ 新建类型</button>
         </div>
+        </div><!-- /#wmSharedControls -->
       </aside>
     </main>
 
-    <!-- ===== 施工报告模式 ===== -->
+    <!-- ===== 施工报告模式（文档内直接编辑水印） ===== -->
     <main class="layout report-layout mode-panel" id="modeReport">
       <section class="report-workspace">
         <div class="report-toolbar">
@@ -182,31 +184,33 @@
           <button type="button" class="btn btn-ghost btn-sm" id="btnInsertHeading">+ 标题</button>
           <button type="button" class="btn btn-ghost btn-sm" id="btnInsertLabel">+ 文字</button>
           <button type="button" class="btn btn-ghost btn-sm" id="btnInsertPhoto">+ 图片</button>
-          <span class="muted report-hint">连续编辑 · 可拖拽排序 · 导出 Word</span>
+          <button type="button" class="btn btn-primary btn-sm" id="btnInsertPage">+ 下一页</button>
+          <span class="muted report-hint">像 Word 一样连续加页 · 选中图片可在右侧改水印</span>
         </div>
         <div class="report-scroll" id="reportScroll">
-          <article class="report-paper" id="reportPaper" aria-label="报告编辑区"></article>
+          <div class="report-pages" id="reportPages" aria-label="报告编辑区"></div>
         </div>
       </section>
       <aside class="controls-panel report-side">
-        <h3 class="report-side-title">块属性</h3>
-        <p class="hint" id="reportBlockHint">选中纸上的块以编辑</p>
-        <div id="reportBlockEditor" class="report-block-editor" hidden>
+        <div class="report-side-head">
+          <h3 class="report-side-title">文档与块</h3>
           <div class="field">
+            <label>报告标题</label>
+            <input type="text" id="reportDocTitle" placeholder="如：竹山水渠清理" />
+          </div>
+        </div>
+        <p class="hint" id="reportBlockHint">选中文档中的<strong>图片块</strong>，下方出现完整水印编辑工具</p>
+        <div id="reportBlockEditor" class="report-block-editor" hidden>
+          <div class="field" id="blockTextField">
             <label>文字内容</label>
             <input type="text" id="blockTextInput" />
           </div>
           <div class="field" id="blockPhotoField" hidden>
-            <label>图片</label>
+            <label>本页图片</label>
             <label class="btn btn-secondary btn-sm file-btn">
               <input type="file" id="blockPhotoInput" accept="image/*" hidden />
               选择 / 替换图片
             </label>
-            <label class="check-row">
-              <input type="checkbox" id="blockWmCheck" checked />
-              套用当前水印配置
-            </label>
-            <button type="button" id="btnApplyWmToBlock" class="btn btn-ghost btn-sm">用水印工具当前内容刷新本图</button>
           </div>
           <div class="field-row-actions">
             <button type="button" id="btnBlockUp" class="btn btn-ghost btn-sm">上移</button>
@@ -215,13 +219,11 @@
             <button type="button" id="btnBlockDel" class="btn btn-ghost btn-sm danger-text">删除</button>
           </div>
         </div>
-        <hr class="report-sep" />
-        <h3 class="report-side-title">文档</h3>
-        <div class="field">
-          <label>报告标题（页眉用）</label>
-          <input type="text" id="reportDocTitle" placeholder="如：竹山水渠清理" />
+        <div id="reportWmSection" class="report-wm-section" hidden>
+          <h3 class="report-side-title">水印编辑（作用于当前选中图片）</h3>
+          <p class="hint">修改后自动套到该图；点选时间/位置/天气同样可用</p>
+          <div id="reportWmDock" class="report-wm-dock"></div>
         </div>
-        <p class="hint">提示：先在「水印工具」配好字段与样式，再到报告里给图片勾选「套用水印」。</p>
       </aside>
     </main>
   </div><!-- /#appRoot -->

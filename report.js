@@ -1,5 +1,5 @@
 /**
- * 施工报告：连续块编辑 + 前后对比排版 + 导出 Word
+ * 施工报告：文档内编辑水印 + 多页连续排版 + 导出 Word
  */
 import {
   Document,
@@ -8,80 +8,88 @@ import {
   TextRun,
   ImageRun,
   AlignmentType,
-  HeadingLevel,
+  PageBreak,
 } from "https://cdn.jsdelivr.net/npm/docx@8.5.0/+esm";
 
-const REPORT_KEY = "shuiying_report_v1";
+const REPORT_KEY = "shuiying_report_v2";
 const $ = (s, r = document) => r.querySelector(s);
 
 function uid() {
   return `b_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function emptyPhoto() {
+  return {
+    id: uid(),
+    type: "photo",
+    assetId: null,
+    previewUrl: "",
+    useWatermark: true,
+    wmSnapshot: null,
+  };
+}
+
 function defaultDoc() {
   return {
-    version: 1,
+    version: 2,
     title: "",
     blocks: [
-      {
-        id: uid(),
-        type: "heading",
-        text: "",
-        align: "center",
-        underline: true,
-      },
+      { id: uid(), type: "heading", text: "", align: "center", underline: true },
       { id: uid(), type: "label", text: "施工前：" },
-      {
-        id: uid(),
-        type: "photo",
-        assetId: null,
-        previewUrl: "",
-        useWatermark: true,
-        wmSnapshot: null,
-      },
+      emptyPhoto(),
       { id: uid(), type: "label", text: "施工后：" },
-      {
-        id: uid(),
-        type: "photo",
-        assetId: null,
-        previewUrl: "",
-        useWatermark: true,
-        wmSnapshot: null,
-      },
+      emptyPhoto(),
     ],
-    assets: {}, // id -> { name, dataUrl }
+    assets: {},
   };
 }
 
 const reportState = {
   doc: defaultDoc(),
   selectedId: null,
-  mode: "watermark",
+  mode: "report",
+  _liveBusy: false,
+  _suppressWmLoad: false,
 };
 
-// —— 模式切换 ——
+// —— 水印面板停靠（同一套 UI 在报告侧栏复用） ——
+function dockWmPanel(where) {
+  const panel = $("#wmSharedControls");
+  const home = $("#wmControlsHome");
+  const dock = $("#reportWmDock");
+  if (!panel) return;
+  if (where === "report" && dock) {
+    dock.appendChild(panel);
+  } else if (home) {
+    home.appendChild(panel);
+  }
+}
+
 function setMode(mode) {
   reportState.mode = mode;
   document.querySelectorAll(".mode-btn").forEach((b) => {
     b.classList.toggle("active", b.dataset.mode === mode);
   });
   const isWm = mode === "watermark";
-  $("#modeWatermark").hidden = !isWm;
-  $("#modeReport").hidden = isWm;
-  $("#watermarkActions").hidden = !isWm;
-  $("#reportActions").hidden = isWm;
-  if (!isWm) {
-    renderPaper();
-    scheduleFitIfNeeded();
-  } else {
-    window.dispatchEvent(new Event("resize"));
-  }
-}
+  if ($("#modeWatermark")) $("#modeWatermark").hidden = !isWm;
+  if ($("#modeReport")) $("#modeReport").hidden = isWm;
+  if ($("#watermarkActions")) $("#watermarkActions").hidden = !isWm;
+  if ($("#reportActions")) $("#reportActions").hidden = isWm;
 
-function scheduleFitIfNeeded() {
-  requestAnimationFrame(() => {
-    if (typeof window.scheduleFitCanvas === "function") window.scheduleFitCanvas();
-  });
+  if (isWm) {
+    dockWmPanel("watermark");
+    window.dispatchEvent(new Event("resize"));
+  } else {
+    renderPaper();
+    // 若当前选中图片，把水印工具挂到报告侧栏
+    const b = getBlock(reportState.selectedId);
+    if (b?.type === "photo") {
+      showWmForPhoto(b);
+    } else {
+      hideWmSection();
+      dockWmPanel("watermark");
+    }
+  }
 }
 
 // —— 持久化 ——
@@ -91,7 +99,6 @@ function saveDoc() {
       ...reportState.doc,
       blocks: reportState.doc.blocks.map((b) => {
         if (b.type !== "photo") return b;
-        // 预览 URL 用 dataUrl 重建，不存 blob:
         return { ...b, previewUrl: "" };
       }),
     };
@@ -103,54 +110,80 @@ function saveDoc() {
 
 function loadDoc() {
   try {
-    const raw = localStorage.getItem(REPORT_KEY);
+    const raw = localStorage.getItem(REPORT_KEY) || localStorage.getItem("shuiying_report_v1");
     if (!raw) return;
     const parsed = JSON.parse(raw);
     if (!parsed?.blocks) return;
     reportState.doc = parsed;
-    // 恢复 photo preview
     for (const b of reportState.doc.blocks) {
       if (b.type === "photo" && b.assetId && reportState.doc.assets[b.assetId]) {
-        b.previewUrl = reportState.doc.assets[b.assetId].dataUrl;
+        const a = reportState.doc.assets[b.assetId];
+        b.previewUrl = a.composedUrl || a.dataUrl || a.rawUrl || "";
+        if (!a.rawUrl && a.dataUrl) a.rawUrl = a.dataUrl;
       }
     }
   } catch (_) {}
 }
 
-// —— 渲染纸面 ——
+// —— 分页渲染 ——
+function splitPages(blocks) {
+  const pages = [[]];
+  for (const b of blocks) {
+    if (b.type === "pageBreak") {
+      pages.push([]);
+    } else {
+      pages[pages.length - 1].push(b);
+    }
+  }
+  if (pages.length === 0) pages.push([]);
+  return pages;
+}
+
+function renderBlockHtml(b) {
+  const sel = b.id === reportState.selectedId ? "selected" : "";
+  if (b.type === "heading") {
+    return `<div class="report-block ${sel}" data-id="${b.id}" data-type="heading" draggable="true">
+      <span class="block-handle" title="拖动">⋮⋮</span>
+      <div class="report-heading" contenteditable="true" data-role="text">${escapeHtml(b.text || "报告标题")}</div>
+    </div>`;
+  }
+  if (b.type === "label") {
+    return `<div class="report-block ${sel}" data-id="${b.id}" data-type="label" draggable="true">
+      <span class="block-handle" title="拖动">⋮⋮</span>
+      <div class="report-label" contenteditable="true" data-role="text">${escapeHtml(b.text || "文字")}</div>
+    </div>`;
+  }
+  if (b.type === "photo") {
+    const img = b.previewUrl
+      ? `<img class="report-photo" src="${b.previewUrl}" alt="施工图" />`
+      : `<div class="report-photo-empty">点击右侧选择图片，并在下方编辑水印</div>`;
+    return `<div class="report-block ${sel}" data-id="${b.id}" data-type="photo" draggable="true">
+      <span class="block-handle" title="拖动">⋮⋮</span>
+      <div class="report-photo-wrap">${img}</div>
+    </div>`;
+  }
+  return "";
+}
+
 function renderPaper() {
-  const paper = $("#reportPaper");
-  if (!paper) return;
-  const { blocks } = reportState.doc;
-  paper.innerHTML = blocks
-    .map((b) => {
-      const sel = b.id === reportState.selectedId ? "selected" : "";
-      if (b.type === "heading") {
-        return `<div class="report-block ${sel}" data-id="${b.id}" data-type="heading" draggable="true">
-          <span class="block-handle" title="拖动排序">⋮⋮</span>
-          <div class="report-heading" contenteditable="true" data-role="text">${escapeHtml(b.text || "报告标题")}</div>
-        </div>`;
-      }
-      if (b.type === "label") {
-        return `<div class="report-block ${sel}" data-id="${b.id}" data-type="label" draggable="true">
-          <span class="block-handle" title="拖动排序">⋮⋮</span>
-          <div class="report-label" contenteditable="true" data-role="text">${escapeHtml(b.text || "文字")}</div>
-        </div>`;
-      }
-      if (b.type === "photo") {
-        const img = b.previewUrl
-          ? `<img class="report-photo" src="${b.previewUrl}" alt="施工图" />`
-          : `<div class="report-photo-empty">点击导入图片（在文档中直接显示）</div>`;
-        return `<div class="report-block ${sel}" data-id="${b.id}" data-type="photo" draggable="true">
-          <span class="block-handle" title="拖动排序">⋮⋮</span>
-          <div class="report-photo-wrap">${img}</div>
-        </div>`;
-      }
-      return "";
+  const host = $("#reportPages");
+  if (!host) return;
+  const pages = splitPages(reportState.doc.blocks);
+  host.innerHTML = pages
+    .map((pageBlocks, pageIndex) => {
+      const body = pageBlocks.map(renderBlockHtml).join("");
+      const empty =
+        pageBlocks.length === 0
+          ? `<div class="report-page-empty">第 ${pageIndex + 1} 页（空）· 用工具栏插入内容</div>`
+          : "";
+      return `<article class="report-paper" data-page="${pageIndex}">
+        <div class="report-page-badge">第 ${pageIndex + 1} 页 / 共 ${pages.length} 页</div>
+        ${body}${empty}
+      </article>`;
     })
     .join("");
 
-  $("#reportDocTitle").value = reportState.doc.title || "";
+  if ($("#reportDocTitle")) $("#reportDocTitle").value = reportState.doc.title || "";
   syncSideEditor();
 }
 
@@ -167,11 +200,45 @@ function getBlock(id) {
 }
 
 function selectBlock(id) {
+  // 离开上一张图时，把当前水印快照写回
+  flushWmToSelected();
   reportState.selectedId = id;
   document.querySelectorAll(".report-block").forEach((el) => {
     el.classList.toggle("selected", el.dataset.id === id);
   });
   syncSideEditor();
+  const b = getBlock(id);
+  if (b?.type === "photo") showWmForPhoto(b);
+  else hideWmSection();
+}
+
+function hideWmSection() {
+  const sec = $("#reportWmSection");
+  if (sec) sec.hidden = true;
+  if (reportState.mode === "report") {
+    // 停靠回水印模式容器，避免丢 DOM
+    dockWmPanel("watermark");
+  }
+}
+
+function showWmForPhoto(b) {
+  const sec = $("#reportWmSection");
+  if (sec) sec.hidden = false;
+  dockWmPanel("report");
+  // 加载该图自己的水印快照到表单
+  if (b.wmSnapshot && window.SyWatermark?.loadSnapshotToUI) {
+    reportState._suppressWmLoad = true;
+    window.SyWatermark.loadSnapshotToUI(b.wmSnapshot);
+    reportState._suppressWmLoad = false;
+  }
+}
+
+function flushWmToSelected() {
+  const b = getBlock(reportState.selectedId);
+  if (!b || b.type !== "photo") return;
+  if (window.SyWatermark?.getSnapshot) {
+    b.wmSnapshot = window.SyWatermark.getSnapshot();
+  }
 }
 
 function syncSideEditor() {
@@ -179,57 +246,46 @@ function syncSideEditor() {
   const hint = $("#reportBlockHint");
   const b = getBlock(reportState.selectedId);
   if (!b) {
-    ed.hidden = true;
-    hint.hidden = false;
+    if (ed) ed.hidden = true;
+    if (hint) hint.hidden = false;
     return;
   }
-  ed.hidden = false;
-  hint.hidden = true;
-  const textField = $("#blockTextInput");
+  if (ed) ed.hidden = false;
+  if (hint) hint.hidden = true;
+  const textField = $("#blockTextField");
   const photoField = $("#blockPhotoField");
   if (b.type === "photo") {
-    textField.closest(".field").hidden = true;
-    photoField.hidden = false;
-    $("#blockWmCheck").checked = b.useWatermark !== false;
+    if (textField) textField.hidden = true;
+    if (photoField) photoField.hidden = false;
+  } else if (b.type === "pageBreak") {
+    if (textField) textField.hidden = true;
+    if (photoField) photoField.hidden = true;
   } else {
-    textField.closest(".field").hidden = false;
-    photoField.hidden = true;
-    textField.value = b.text || "";
+    if (textField) textField.hidden = false;
+    if (photoField) photoField.hidden = true;
+    if ($("#blockTextInput")) $("#blockTextInput").value = b.text || "";
   }
 }
 
 // —— 块操作 ——
 function insertBlocks(list, afterId) {
   const arr = reportState.doc.blocks;
-  let idx = afterId ? arr.findIndex((b) => b.id === afterId) : arr.length - 1;
+  let idx = afterId != null ? arr.findIndex((b) => b.id === afterId) : arr.length - 1;
   if (idx < 0) idx = arr.length - 1;
   arr.splice(idx + 1, 0, ...list);
   reportState.selectedId = list[list.length - 1].id;
   saveDoc();
   renderPaper();
+  selectBlock(reportState.selectedId);
 }
 
 function insertCompareGroup() {
   insertBlocks(
     [
       { id: uid(), type: "label", text: "施工前：" },
-      {
-        id: uid(),
-        type: "photo",
-        assetId: null,
-        previewUrl: "",
-        useWatermark: true,
-        wmSnapshot: null,
-      },
+      emptyPhoto(),
       { id: uid(), type: "label", text: "施工后：" },
-      {
-        id: uid(),
-        type: "photo",
-        assetId: null,
-        previewUrl: "",
-        useWatermark: true,
-        wmSnapshot: null,
-      },
+      emptyPhoto(),
     ],
     reportState.selectedId
   );
@@ -247,19 +303,32 @@ function insertLabel() {
 }
 
 function insertPhoto() {
-  insertBlocks(
-    [
-      {
-        id: uid(),
-        type: "photo",
-        assetId: null,
-        previewUrl: "",
-        useWatermark: true,
-        wmSnapshot: null,
-      },
-    ],
-    reportState.selectedId
-  );
+  insertBlocks([emptyPhoto()], reportState.selectedId);
+}
+
+/** 像 Word 一样新开一页，并放一组前后对比骨架 */
+function insertNextPage() {
+  flushWmToSelected();
+  const pageBreak = { id: uid(), type: "pageBreak" };
+  const group = [
+    pageBreak,
+    { id: uid(), type: "heading", text: reportState.doc.title || "续页", align: "center", underline: true },
+    { id: uid(), type: "label", text: "施工前：" },
+    emptyPhoto(),
+    { id: uid(), type: "label", text: "施工后：" },
+    emptyPhoto(),
+  ];
+  // 追加到文末
+  reportState.doc.blocks.push(...group);
+  reportState.selectedId = group[group.length - 1].id;
+  saveDoc();
+  renderPaper();
+  selectBlock(reportState.selectedId);
+  // 滚到新页
+  requestAnimationFrame(() => {
+    const pages = document.querySelectorAll(".report-paper");
+    pages[pages.length - 1]?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
 }
 
 function moveBlock(id, dir) {
@@ -271,16 +340,14 @@ function moveBlock(id, dir) {
   [arr[i], arr[j]] = [arr[j], arr[i]];
   saveDoc();
   renderPaper();
+  selectBlock(id);
 }
 
 function dupBlock(id) {
   const b = getBlock(id);
-  if (!b) return;
+  if (!b || b.type === "pageBreak") return;
   const copy = JSON.parse(JSON.stringify(b));
   copy.id = uid();
-  if (copy.type === "photo" && copy.assetId) {
-    // 共用 asset
-  }
   insertBlocks([copy], id);
 }
 
@@ -296,6 +363,8 @@ function delBlock(id) {
   reportState.selectedId = arr[Math.max(0, i - 1)]?.id || null;
   saveDoc();
   renderPaper();
+  if (reportState.selectedId) selectBlock(reportState.selectedId);
+  else hideWmSection();
 }
 
 function newReport() {
@@ -304,9 +373,10 @@ function newReport() {
   reportState.selectedId = reportState.doc.blocks[0].id;
   saveDoc();
   renderPaper();
+  hideWmSection();
 }
 
-// —— 图片 + 水印 ——
+// —— 图片 + 水印实时合成 ——
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -329,54 +399,69 @@ async function assignPhotoToBlock(blockId, file) {
   const b = getBlock(blockId);
   if (!b || b.type !== "photo") return;
   const dataUrl = await fileToDataUrl(file);
-  const assetId = uid();
-  reportState.doc.assets[assetId] = { name: file.name || "photo.jpg", dataUrl };
+  const assetId = b.assetId || uid();
+  reportState.doc.assets[assetId] = {
+    name: file.name || "photo.jpg",
+    dataUrl,
+    rawUrl: dataUrl,
+  };
   b.assetId = assetId;
-  b.useWatermark = $("#blockWmCheck")?.checked !== false;
+  b.useWatermark = true;
+  b.wmSnapshot = window.SyWatermark?.getSnapshot?.() || null;
 
-  if (b.useWatermark && window.SyWatermark?.composeDataUrl) {
+  if (b.wmSnapshot && window.SyWatermark?.composeDataUrl) {
     try {
-      b.wmSnapshot = window.SyWatermark.getSnapshot();
       b.previewUrl = await window.SyWatermark.composeDataUrl(dataUrl, b.wmSnapshot);
-    } catch (e) {
-      console.warn(e);
+    } catch {
       b.previewUrl = dataUrl;
     }
   } else {
     b.previewUrl = dataUrl;
-    b.wmSnapshot = null;
   }
-  // 存合成后的图到 asset 方便导出（保留原图+合成）
   reportState.doc.assets[assetId].composedUrl = b.previewUrl;
-  reportState.doc.assets[assetId].rawUrl = dataUrl;
   saveDoc();
   renderPaper();
+  selectBlock(blockId);
 }
 
-async function reapplyWatermarkToBlock(blockId) {
-  const b = getBlock(blockId);
-  if (!b || b.type !== "photo" || !b.assetId) {
-    alert("请先为该块选择图片");
-    return;
-  }
+/** 水印表单变更 → 刷新当前选中图片 */
+async function liveUpdateSelectedPhoto() {
+  if (reportState._suppressWmLoad) return;
+  if (reportState.mode !== "report") return;
+  if (reportState._liveBusy) return;
+  const b = getBlock(reportState.selectedId);
+  if (!b || b.type !== "photo" || !b.assetId) return;
   const asset = reportState.doc.assets[b.assetId];
-  if (!asset?.rawUrl && !asset?.dataUrl) return;
-  const raw = asset.rawUrl || asset.dataUrl;
-  b.useWatermark = true;
-  $("#blockWmCheck").checked = true;
-  if (!window.SyWatermark?.composeDataUrl) {
-    alert("水印引擎未就绪");
-    return;
+  const raw = asset?.rawUrl || asset?.dataUrl;
+  if (!raw || !window.SyWatermark?.composeDataUrl) return;
+
+  reportState._liveBusy = true;
+  try {
+    const snap = window.SyWatermark.getSnapshot();
+    b.wmSnapshot = snap;
+    b.useWatermark = true;
+    const url = await window.SyWatermark.composeDataUrl(raw, snap, 0.9);
+    b.previewUrl = url;
+    asset.composedUrl = url;
+    // 仅更新 img，避免整页重绘丢焦点
+    const img = document.querySelector(`.report-block[data-id="${b.id}"] img.report-photo`);
+    if (img) img.src = url;
+    else renderPaper();
+    saveDoc();
+  } catch (e) {
+    console.warn("实时水印失败", e);
+  } finally {
+    reportState._liveBusy = false;
   }
-  b.wmSnapshot = window.SyWatermark.getSnapshot();
-  b.previewUrl = await window.SyWatermark.composeDataUrl(raw, b.wmSnapshot);
-  asset.composedUrl = b.previewUrl;
-  asset.rawUrl = raw;
-  saveDoc();
-  renderPaper();
 }
 
-// —— 导出 Word ——
+let _liveTimer = null;
+function scheduleLiveWm() {
+  clearTimeout(_liveTimer);
+  _liveTimer = setTimeout(() => liveUpdateSelectedPhoto(), 350);
+}
+
+// —— 导出 Word（分页） ——
 function dataUrlToUint8Array(dataUrl) {
   const base64 = dataUrl.split(",")[1];
   const bin = atob(base64);
@@ -393,6 +478,7 @@ function probeImageSize(dataUrl) {
 }
 
 async function exportDocx() {
+  flushWmToSelected();
   const btn = $("#btnExportDocx");
   const old = btn?.textContent;
   if (btn) {
@@ -401,16 +487,24 @@ async function exportDocx() {
   }
   try {
     const children = [];
-    // A4 内容区约 210mm - 2*5mm ≈ 200mm → 约 567 像素（96dpi 估算用较宽）
-    // 极窄页边距 ~5mm = 284 twips；图片尽量铺满版心并居中
     const pageContentWidth = 620;
+    let firstPage = true;
 
     for (const b of reportState.doc.blocks) {
+      if (b.type === "pageBreak") {
+        children.push(
+          new Paragraph({
+            children: [new PageBreak()],
+          })
+        );
+        firstPage = false;
+        continue;
+      }
       if (b.type === "heading") {
         children.push(
           new Paragraph({
             alignment: AlignmentType.CENTER,
-            spacing: { after: 120, before: 40 },
+            spacing: { after: 120, before: firstPage ? 40 : 80 },
             children: [
               new TextRun({
                 text: b.text || reportState.doc.title || "施工报告",
@@ -463,8 +557,7 @@ async function exportDocx() {
           } catch (_) {}
         }
         const { w, h } = await probeImageSize(url);
-        const maxW = pageContentWidth;
-        const scale = Math.min(1, maxW / w);
+        const scale = Math.min(1, pageContentWidth / w);
         const dw = Math.round(w * scale);
         const dh = Math.round(h * scale);
         const bytes = dataUrlToUint8Array(url);
@@ -488,19 +581,13 @@ async function exportDocx() {
       children.push(new Paragraph({ children: [new TextRun("空报告")] }));
     }
 
-    // 页边距约 5mm（1mm ≈ 56.7 twips → 5mm ≈ 284）
     const tight = 284;
     const doc = new Document({
       sections: [
         {
           properties: {
             page: {
-              margin: {
-                top: tight,
-                bottom: tight,
-                left: tight,
-                right: tight,
-              },
+              margin: { top: tight, bottom: tight, left: tight, right: tight },
             },
           },
           children,
@@ -549,20 +636,21 @@ function bindReportEvents() {
   $("#btnInsertHeading")?.addEventListener("click", insertHeading);
   $("#btnInsertLabel")?.addEventListener("click", insertLabel);
   $("#btnInsertPhoto")?.addEventListener("click", insertPhoto);
+  $("#btnInsertPage")?.addEventListener("click", insertNextPage);
 
   $("#reportDocTitle")?.addEventListener("input", (e) => {
     reportState.doc.title = e.target.value;
     saveDoc();
   });
 
-  const paper = $("#reportPaper");
-  paper?.addEventListener("click", (e) => {
+  const pagesHost = $("#reportPages") || $("#reportScroll");
+  pagesHost?.addEventListener("click", (e) => {
     const block = e.target.closest(".report-block");
     if (!block) return;
     selectBlock(block.dataset.id);
   });
 
-  paper?.addEventListener("input", (e) => {
+  pagesHost?.addEventListener("input", (e) => {
     const el = e.target.closest("[data-role='text']");
     if (!el) return;
     const block = el.closest(".report-block");
@@ -571,33 +659,33 @@ function bindReportEvents() {
     b.text = el.innerText.replace(/\n/g, "").trim();
     if (b.type === "heading" && !reportState.doc.title) {
       reportState.doc.title = b.text;
-      $("#reportDocTitle").value = b.text;
+      if ($("#reportDocTitle")) $("#reportDocTitle").value = b.text;
     }
     saveDoc();
   });
 
   // 拖拽排序
   let dragId = null;
-  paper?.addEventListener("dragstart", (e) => {
+  pagesHost?.addEventListener("dragstart", (e) => {
     const block = e.target.closest(".report-block");
     if (!block) return;
     dragId = block.dataset.id;
     block.classList.add("dragging");
     e.dataTransfer.effectAllowed = "move";
   });
-  paper?.addEventListener("dragend", (e) => {
-    e.target.closest(".report-block")?.classList.remove("dragging");
+  pagesHost?.addEventListener("dragend", () => {
+    document.querySelectorAll(".report-block.dragging").forEach((el) => el.classList.remove("dragging"));
     document.querySelectorAll(".report-block.drag-over").forEach((el) => el.classList.remove("drag-over"));
     dragId = null;
   });
-  paper?.addEventListener("dragover", (e) => {
+  pagesHost?.addEventListener("dragover", (e) => {
     e.preventDefault();
     const block = e.target.closest(".report-block");
     if (!block || block.dataset.id === dragId) return;
     document.querySelectorAll(".report-block.drag-over").forEach((el) => el.classList.remove("drag-over"));
     block.classList.add("drag-over");
   });
-  paper?.addEventListener("drop", (e) => {
+  pagesHost?.addEventListener("drop", (e) => {
     e.preventDefault();
     const block = e.target.closest(".report-block");
     if (!block || !dragId || block.dataset.id === dragId) return;
@@ -627,32 +715,6 @@ function bindReportEvents() {
     await assignPhotoToBlock(reportState.selectedId, f);
   });
 
-  $("#blockWmCheck")?.addEventListener("change", async (e) => {
-    const b = getBlock(reportState.selectedId);
-    if (!b || b.type !== "photo") return;
-    b.useWatermark = e.target.checked;
-    const asset = b.assetId ? reportState.doc.assets[b.assetId] : null;
-    if (!asset) {
-      saveDoc();
-      return;
-    }
-    const raw = asset.rawUrl || asset.dataUrl;
-    if (b.useWatermark && window.SyWatermark?.composeDataUrl) {
-      b.wmSnapshot = window.SyWatermark.getSnapshot();
-      b.previewUrl = await window.SyWatermark.composeDataUrl(raw, b.wmSnapshot);
-      asset.composedUrl = b.previewUrl;
-    } else {
-      b.previewUrl = raw;
-      asset.composedUrl = raw;
-    }
-    saveDoc();
-    renderPaper();
-  });
-
-  $("#btnApplyWmToBlock")?.addEventListener("click", () => {
-    if (reportState.selectedId) reapplyWatermarkToBlock(reportState.selectedId);
-  });
-
   $("#btnBlockUp")?.addEventListener("click", () => {
     if (reportState.selectedId) moveBlock(reportState.selectedId, -1);
   });
@@ -665,19 +727,29 @@ function bindReportEvents() {
   $("#btnBlockDel")?.addEventListener("click", () => {
     if (reportState.selectedId && confirm("删除该块？")) delBlock(reportState.selectedId);
   });
+
+  // 监听水印表单变更 → 实时更新选中图
+  if (window.SyWatermark?.onChange) {
+    window.SyWatermark.onChange(() => scheduleLiveWm());
+  } else {
+    // app.js 可能尚未挂上，稍后重试
+    setTimeout(() => {
+      window.SyWatermark?.onChange?.(() => scheduleLiveWm());
+    }, 500);
+  }
 }
 
 function initReport() {
   loadDoc();
   if (!reportState.doc.blocks?.length) reportState.doc = defaultDoc();
-  reportState.selectedId = reportState.doc.blocks[0]?.id || null;
+  reportState.selectedId = reportState.doc.blocks.find((b) => b.type !== "pageBreak")?.id || null;
   bindReportEvents();
 
-  // 桌面 office.html 默认报告；网页若引入本脚本则默认水印
   const isDesktopOffice =
     document.body.classList.contains("desktop-app") ||
     !!window.syDesktop?.saveBlob ||
-    location.pathname.endsWith("office.html");
+    /office\.html/i.test(location.pathname || location.href || "");
+
   setMode(isDesktopOffice ? "report" : "watermark");
 
   if (window.syDesktop?.onExportDocx) {
@@ -698,4 +770,5 @@ window.SyReport = {
   setMode,
   exportDocx,
   getDoc: () => reportState.doc,
+  insertNextPage,
 };

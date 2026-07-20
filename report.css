@@ -45,7 +45,7 @@ main[hidden],
 
 .report-layout {
   display: grid !important;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
   flex: 1 1 0;
   min-height: 0;
   height: 100%;
@@ -91,27 +91,54 @@ main[hidden],
   flex: 1 1 0;
   min-height: 0;
   overflow: auto;
-  /* 尽量让 A4 占满可视区 */
-  padding: 8px;
+  padding: 12px 8px 40px;
   display: flex;
   justify-content: center;
   align-items: flex-start;
 }
 
-/* A4 白纸：极窄页边距，把面积留给正文与图片 */
+.report-pages {
+  width: min(860px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  align-items: stretch;
+}
+
+/* A4 白纸：极窄页边距；多页纵向堆叠（像 Word） */
 .report-paper {
-  /* 210:297 ≈ A4；尽量吃满横向空间 */
-  width: min(900px, calc(100% - 4px));
-  min-height: calc(min(900px, 100%) * 1.414);
+  width: 100%;
+  min-height: 1120px; /* 约 A4 比例高度 */
   background: #fff;
   color: #1a1a1a;
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.18);
-  /* ~4–5mm 级页边距（相对纸宽） */
-  padding: 10px 12px 14px;
+  padding: 10px 12px 16px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  position: relative;
+}
+
+.report-page-badge {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  font-size: 11px;
+  color: #99a;
+  pointer-events: none;
+}
+
+.report-page-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #aaa;
+  font-size: 13px;
+  border: 1px dashed #ddd;
+  margin-top: 24px;
+  min-height: 200px;
 }
 
 .report-block {
@@ -234,20 +261,83 @@ main[hidden],
 }
 
 .report-side {
-  padding: 16px;
+  padding: 12px;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.report-side-head {
+  flex-shrink: 0;
 }
 
 .report-block-editor {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+  flex-shrink: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.report-wm-section {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.report-wm-section[hidden] {
+  display: none !important;
+}
+
+.report-wm-dock {
+  flex: 1;
+  min-height: 200px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  padding: 8px;
+}
+
+.report-wm-dock .tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface-2);
+}
+
+.report-wm-dock .tab-panel {
+  max-height: none;
 }
 
 .report-sep {
   border: none;
   border-top: 1px solid var(--border);
-  margin: 16px 0;
+  margin: 8px 0;
+}
+
+#wmSharedControls {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+#wmControlsHome {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#wmControlsHome #wmSharedControls {
+  flex: 1;
+  overflow: auto;
 }
 
 .check-row {
@@ -276,7 +366,7 @@ main[hidden],
 @media (max-width: 900px) {
   .report-layout {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 1fr) minmax(160px, 38%);
+    grid-template-rows: minmax(0, 1fr) minmax(220px, 42%);
   }
 
   .mode-switch {
@@ -292,6 +382,11 @@ main[hidden],
     padding: 4px;
   }
 
+  .report-pages {
+    width: 100%;
+    gap: 12px;
+  }
+
   .report-paper {
     width: 100%;
     padding: 8px 8px 12px;
@@ -303,6 +398,9 @@ main[hidden],
     font-size: 17px;
   }
 
+  .report-wm-dock {
+    min-height: 140px;
+  }
 
   .report-block .block-handle {
     display: none !important;

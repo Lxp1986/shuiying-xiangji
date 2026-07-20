@@ -1307,6 +1307,32 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
+// 水印变更监听（报告模式实时刷新选中块）
+const _wmListeners = [];
+function notifyWatermarkChange() {
+  for (const cb of _wmListeners) {
+    try {
+      cb(getWatermarkSnapshotSafe());
+    } catch (e) {
+      console.warn(e);
+    }
+  }
+}
+function onWatermarkChange(cb) {
+  if (typeof cb === "function") _wmListeners.push(cb);
+  return () => {
+    const i = _wmListeners.indexOf(cb);
+    if (i >= 0) _wmListeners.splice(i, 1);
+  };
+}
+function getWatermarkSnapshotSafe() {
+  try {
+    return getWatermarkSnapshot();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 让画布在预览区内完整显示（contain），不出现页面滚动。
  * 仅改 CSS 宽高；canvas.width/height 始终等于原图像素，导出分辨率不变。
@@ -1360,15 +1386,16 @@ function redraw() {
   if (!state.image) {
     canvas.classList.remove("visible");
     emptyState.classList.remove("hidden");
-    $("#btnExport").disabled = true;
+    if ($("#btnExport")) $("#btnExport").disabled = true;
     canvas.style.width = "";
     canvas.style.height = "";
+    notifyWatermarkChange();
     return;
   }
 
   emptyState.classList.add("hidden");
   canvas.classList.add("visible");
-  $("#btnExport").disabled = false;
+  if ($("#btnExport")) $("#btnExport").disabled = false;
 
   const img = state.image;
   // 位图分辨率 = 原图（保证导出清晰，绝不因预览缩放改掉）
@@ -1390,6 +1417,7 @@ function redraw() {
   state._layout = { ...layout, x: ox, y: oy };
 
   scheduleFitCanvas();
+  notifyWatermarkChange();
 }
 
 // —— 图片 / 导出 ——
@@ -1553,10 +1581,65 @@ async function composeWatermarkedDataUrl(imageDataUrl, snapshot, quality = 0.92)
   return off.toDataURL("image/jpeg", quality);
 }
 
+/** 把快照加载进 state 并同步右侧表单 UI（永久生效，不自动还原） */
+function loadSnapshotToUI(snap) {
+  if (!snap) return;
+  if (snap.typeId) {
+    const t = state.types.find((x) => x.id === snap.typeId);
+    if (t) state.typeId = t.id;
+  }
+  applySnapshotToState(snap); // 返回还原函数，此处不调用 = 保持快照
+  // 上面会改 state 但仍保存了 backup 闭包——我们需要永久应用：
+  // 重新直接写入
+  state.title = snap.title ?? state.title;
+  state.subtitle = snap.subtitle ?? state.subtitle;
+  state.fieldValues = { ...(snap.fieldValues || state.fieldValues) };
+  state.scale = snap.scale ?? state.scale;
+  state.fontScale = snap.fontScale ?? state.fontScale;
+  state.boxOpacity = snap.boxOpacity ?? state.boxOpacity;
+  state.textOpacity = snap.textOpacity ?? state.textOpacity;
+  state.radius = snap.radius ?? state.radius;
+  state.position = snap.position ?? state.position;
+  state.margin = snap.margin ?? state.margin;
+  state.headerColor = snap.headerColor ?? state.headerColor;
+  state.bannerColor = snap.bannerColor ?? state.bannerColor;
+  state.textColor = snap.textColor ?? state.textColor;
+  state.offsetX = snap.offsetX ?? 0;
+  state.offsetY = snap.offsetY ?? 0;
+
+  if (titleInput) titleInput.value = state.title || "";
+  if (subtitleInput) subtitleInput.value = state.subtitle || "";
+  renderTypeSelect();
+  renderFieldsEditor();
+  // 滑块
+  const setRange = (id, valId, v, fmt) => {
+    const el = $(id);
+    const lab = $(valId);
+    if (el) el.value = v;
+    if (lab) lab.textContent = fmt;
+  };
+  setRange("#scaleRange", "#scaleVal", Math.round(state.scale * 100), `${Math.round(state.scale * 100)}%`);
+  setRange("#fontRange", "#fontVal", Math.round(state.fontScale * 100), `${Math.round(state.fontScale * 100)}%`);
+  setRange("#boxOpacityRange", "#boxOpacityVal", Math.round(state.boxOpacity * 100), `${Math.round(state.boxOpacity * 100)}%`);
+  setRange("#textOpacityRange", "#textOpacityVal", Math.round(state.textOpacity * 100), `${Math.round(state.textOpacity * 100)}%`);
+  setRange("#radiusRange", "#radiusVal", state.radius, String(state.radius));
+  setRange("#marginRange", "#marginVal", state.margin, `${state.margin}px`);
+  if ($("#headerColor")) $("#headerColor").value = state.headerColor;
+  if ($("#bannerColor")) $("#bannerColor").value = state.bannerColor;
+  if ($("#textColor")) $("#textColor").value = state.textColor;
+  document.querySelectorAll("#posGrid button").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.pos === state.position);
+  });
+  notifyWatermarkChange();
+}
+
 // 暴露给 report 模块 / 调试
 window.SyWatermark = {
   getSnapshot: getWatermarkSnapshot,
   composeDataUrl: composeWatermarkedDataUrl,
+  loadSnapshotToUI,
+  onChange: onWatermarkChange,
+  notifyChange: notifyWatermarkChange,
   getState: () => state,
 };
 window.scheduleFitCanvas = scheduleFitCanvas;
