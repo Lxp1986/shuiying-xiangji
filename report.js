@@ -418,15 +418,8 @@ function flushWmToSelected() {
   const b = getBlock(reportState.selectedId);
   if (!b || b.type !== "photo") return;
   if (window.SyWatermark?.getSnapshot) {
-    let snap = window.SyWatermark.getSnapshot();
-    // 续页块：用户若未手填，仍强制不带上旧的日期/天气/经纬度
-    if (b.inheritClearedGeoTime) {
-      snap = scrubTimeWeatherLatLng(snap);
-      // 若用户已手填时间/天气/经纬度，scrub 会清空——不对
-      // 仅在「尚未手填」时保持清空：用表单现值，不再二次 scrub
-      snap = window.SyWatermark.getSnapshot();
-    }
-    b.wmSnapshot = snap;
+    // 以当前表单为准（续页已通过 loadSnapshotToUI 清空日期/天气/经纬度）
+    b.wmSnapshot = window.SyWatermark.getSnapshot();
   }
 }
 
