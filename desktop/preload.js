@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld("syDesktop", {
     const base64 = btoa(binary);
     return ipcRenderer.invoke("dialog:save-blob", { name, base64 });
   },
+  onMenu(channel, cb) {
+    ipcRenderer.on(channel, () => cb && cb());
+  },
   onExportDocx(cb) {
     ipcRenderer.on("menu:export-docx", () => cb && cb());
   },
@@ -20,5 +23,26 @@ contextBridge.exposeInMainWorld("syDesktop", {
   },
   searchPlaces(q) {
     return ipcRenderer.invoke("geo:search", { q });
+  },
+  ipLocate() {
+    return ipcRenderer.invoke("geo:ip");
+  },
+  getSettings() {
+    return ipcRenderer.invoke("settings:get");
+  },
+  setSettings(partial) {
+    return ipcRenderer.invoke("settings:set", partial);
+  },
+  pickDirectory() {
+    return ipcRenderer.invoke("dialog:pick-directory");
+  },
+  openProject() {
+    return ipcRenderer.invoke("project:open");
+  },
+  saveProject(payload) {
+    return ipcRenderer.invoke("project:save", payload);
+  },
+  autosaveProject(payload) {
+    return ipcRenderer.invoke("project:autosave", payload);
   },
 });

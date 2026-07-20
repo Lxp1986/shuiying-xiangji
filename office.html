@@ -41,11 +41,19 @@
           <button type="button" id="btnExport" class="btn btn-primary" disabled>导出图片</button>
         </span>
         <span id="reportActions" class="mode-actions">
+          <button type="button" id="btnOpenProject" class="btn btn-ghost" title="打开工程">打开</button>
+          <button type="button" id="btnSaveProject" class="btn btn-ghost" title="保存工程">保存</button>
+          <button type="button" id="btnSaveProjectAs" class="btn btn-ghost" title="另存为">另存为</button>
           <button type="button" id="btnReportNew" class="btn btn-ghost">新建</button>
+          <button type="button" id="btnSettings" class="btn btn-ghost" title="设置">设置</button>
           <button type="button" id="btnExportDocx" class="btn btn-primary">导出 Word</button>
         </span>
       </div>
     </header>
+    <div class="status-bar desktop-status">
+      <span id="projectStatus" class="project-status">未保存工程</span>
+      <span id="fileStatusMsg" class="file-status-msg muted"></span>
+    </div>
 
     <!-- ===== 水印模式 ===== -->
     <main class="layout mode-panel" id="modeWatermark" hidden>
@@ -257,6 +265,30 @@
         <h3>用户列表</h3>
         <div id="adminUsersList" class="admin-list"></div>
       </section>
+    </div>
+  </div>
+
+  <!-- 设置 -->
+  <div class="modal" id="settingsModal" hidden>
+    <div class="modal-backdrop" data-close-settings></div>
+    <div class="modal-card modal-card-sm">
+      <h2>设置</h2>
+      <div class="field">
+        <label>默认保存路径（工程自动保存 / 另存默认目录）</label>
+        <div class="loc-search-row">
+          <input type="text" id="settingDefaultDir" placeholder="选择文件夹" readonly />
+          <button type="button" id="btnPickDefaultDir" class="btn btn-secondary">浏览…</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>自动保存间隔（分钟，0 = 关闭）</label>
+        <input type="number" id="settingAutoSave" min="0" max="120" step="1" value="3" />
+        <p class="hint">有修改时按间隔写入当前工程文件；若尚未保存过且设置了默认路径，将保存到该目录。</p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close-settings>取消</button>
+        <button type="button" id="btnSaveSettings" class="btn btn-primary">保存设置</button>
+      </div>
     </div>
   </div>
 

@@ -1069,41 +1069,119 @@ function geolocationErrorMessage(err) {
   return err.message || "请检查定位权限与网络";
 }
 
-async function applyCurrentGps() {
-  if (!navigator.geolocation) {
-    alert("当前环境不支持定位");
-    return;
+/** GPS 精确定位（失败抛错） */
+function tryBrowserGeolocation(options) {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(Object.assign(new Error("无 geolocation API"), { code: 2 }));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(resolve, reject, options);
+  });
+}
+
+/** IP / 网络模糊定位（城市级） */
+async function tryFuzzyIpLocate() {
+  // 桌面：主进程多源 IP 定位
+  if (window.syDesktop?.ipLocate) {
+    return window.syDesktop.ipLocate();
   }
-  setStatus("正在获取当前位置…");
+  // Web 备用
+  const res = await fetch("https://ipapi.co/json/");
+  if (!res.ok) throw new Error("IP 定位失败");
+  const d = await res.json();
+  if (d.latitude == null || d.longitude == null) throw new Error("IP 定位无坐标");
+  return {
+    lat: Number(d.latitude),
+    lng: Number(d.longitude),
+    city: d.city || "",
+    region: d.region || "",
+    country: d.country_name || "",
+    source: "ipapi.co",
+  };
+}
+
+/**
+ * 定位：先 GPS（高精度→低精度），失败则 IP 模糊定位
+ * @returns {{ lat:number, lng:number, address:string, fuzzy:boolean }}
+ */
+async function locateWithFallback() {
+  // 1) GPS 高精度
+  try {
+    const pos = await tryBrowserGeolocation({
+      enableHighAccuracy: true,
+      timeout: 12000,
+      maximumAge: 0,
+    });
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    let address = "";
+    try {
+      address = await reverseGeocode(lat, lng);
+    } catch (_) {}
+    return { lat, lng, address, fuzzy: false };
+  } catch (e1) {
+    console.warn("高精度 GPS 失败", e1);
+  }
+  // 2) GPS 低精度（网络辅助）
+  try {
+    const pos = await tryBrowserGeolocation({
+      enableHighAccuracy: false,
+      timeout: 10000,
+      maximumAge: 60000,
+    });
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    let address = "";
+    try {
+      address = await reverseGeocode(lat, lng);
+    } catch (_) {}
+    return { lat, lng, address, fuzzy: false };
+  } catch (e2) {
+    console.warn("低精度 GPS 失败", e2);
+  }
+  // 3) IP 模糊定位
+  const ip = await tryFuzzyIpLocate();
+  let address = [ip.country, ip.region, ip.city].filter(Boolean).join("");
+  try {
+    const rev = await reverseGeocode(ip.lat, ip.lng);
+    if (rev) address = rev + "（网络模糊定位）";
+    else if (address) address = address + "（网络模糊定位）";
+    else address = `${ip.lat.toFixed(4)}, ${ip.lng.toFixed(4)}（网络模糊定位）`;
+  } catch (_) {
+    if (address) address = address + "（网络模糊定位）";
+    else address = `${ip.lat.toFixed(4)}, ${ip.lng.toFixed(4)}（网络模糊定位）`;
+  }
+  return { lat: ip.lat, lng: ip.lng, address, fuzzy: true };
+}
+
+async function applyCurrentGps() {
+  setStatus("正在定位（GPS，失败将使用网络模糊定位）…");
   if ($("#btnFillGps")) $("#btnFillGps").disabled = true;
   try {
-    const pos = await new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true,
-        timeout: 20000,
-        maximumAge: 0,
-      });
-    });
-    const lng = pos.coords.longitude;
-    const lat = pos.coords.latitude;
+    const { lat, lng, address, fuzzy } = await locateWithFallback();
     state.pickedLng = lng;
     state.pickedLat = lat;
-    setFieldValueByRole("lng", lng.toFixed(8));
-    setFieldValueByRole("lat", lat.toFixed(8));
-    try {
-      const addr = await reverseGeocode(lat, lng);
-      setFieldValueByRole("address", addr);
-      setStatus(`定位成功：${addr || `${lat.toFixed(5)}, ${lng.toFixed(5)}`}`, "ok");
-    } catch (e) {
-      setStatus("已获取坐标，地址解析失败（可手动改地址）", "error");
-    }
+    setFieldValueByRole("lng", lng.toFixed(fuzzy ? 4 : 8));
+    setFieldValueByRole("lat", lat.toFixed(fuzzy ? 4 : 8));
+    if (address) setFieldValueByRole("address", address);
     renderFieldsEditor();
     redraw();
+    setStatus(
+      fuzzy
+        ? `已使用网络模糊定位（城市级）：${address || `${lat.toFixed(4)},${lng.toFixed(4)}`}`
+        : `定位成功：${address || `${lat.toFixed(5)}, ${lng.toFixed(5)}`}`,
+      "ok"
+    );
     await updateWeatherFromState({ silent: true });
   } catch (err) {
     console.error(err);
-    setStatus("定位失败：" + geolocationErrorMessage(err), "error");
-    alert("定位失败：\n" + geolocationErrorMessage(err));
+    setStatus("定位失败：" + (err.message || geolocationErrorMessage(err)), "error");
+    alert(
+      "定位失败：\n" +
+        (err.message || geolocationErrorMessage(err)) +
+        "\n\n可改用「点选位置」在地图上搜索/点击选点。"
+    );
   } finally {
     if ($("#btnFillGps")) $("#btnFillGps").disabled = false;
   }
@@ -1952,24 +2030,19 @@ function bindEvents() {
   });
   $("#btnConfirmLoc").addEventListener("click", confirmLoc);
   $("#btnLocGps").addEventListener("click", async () => {
-    if (!navigator.geolocation) {
-      alert("不支持定位");
-      return;
-    }
     $("#btnLocGps").textContent = "…";
     try {
-      const pos = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 20000,
-          maximumAge: 0,
-        });
-      });
-      await setPendingFromLatLng(pos.coords.latitude, pos.coords.longitude);
-      map?.setView([pos.coords.latitude, pos.coords.longitude], MAP_DEFAULT_ZOOM);
+      const { lat, lng, address, fuzzy } = await locateWithFallback();
+      await setPendingFromLatLng(lat, lng, address || undefined);
+      map?.setView([lat, lng], fuzzy ? 11 : MAP_DEFAULT_ZOOM);
+      if (fuzzy) setStatus("已使用网络模糊定位（城市级），可在地图上微调", "ok");
     } catch (err) {
       console.error(err);
-      alert("定位失败：\n" + geolocationErrorMessage(err));
+      alert(
+        "定位失败：\n" +
+          (err.message || geolocationErrorMessage(err)) +
+          "\n\n可在地图上搜索或点击选点。"
+      );
     } finally {
       $("#btnLocGps").textContent = "定位";
     }

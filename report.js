@@ -50,7 +50,30 @@ const reportState = {
   mode: "report",
   _liveBusy: false,
   _suppressWmLoad: false,
+  projectPath: null, // 当前工程文件路径
+  dirty: false,
+  settings: {
+    defaultSaveDir: "",
+    autoSaveMinutes: 3,
+    lastProjectPath: "",
+  },
+  _autoTimer: null,
 };
+
+function setDirty(v = true) {
+  reportState.dirty = v;
+  updateProjectStatus();
+}
+
+function updateProjectStatus() {
+  const el = $("#projectStatus");
+  if (!el) return;
+  const name = reportState.projectPath
+    ? reportState.projectPath.split(/[/\\]/).pop()
+    : "未保存工程";
+  el.textContent = (reportState.dirty ? "● " : "") + name;
+  el.title = reportState.projectPath || "尚未保存到文件";
+}
 
 // —— 水印面板停靠（同一套 UI 在报告侧栏复用） ——
 function dockWmPanel(where) {
@@ -92,20 +115,35 @@ function setMode(mode) {
   }
 }
 
-// —— 持久化 ——
+// —— 持久化（localStorage 草稿 + 工程文件） ——
+function serializeDoc() {
+  return {
+    ...reportState.doc,
+    blocks: reportState.doc.blocks.map((b) => {
+      if (b.type !== "photo") return b;
+      return { ...b, previewUrl: "" };
+    }),
+  };
+}
+
+function hydrateDoc(parsed) {
+  reportState.doc = parsed;
+  for (const b of reportState.doc.blocks) {
+    if (b.type === "photo" && b.assetId && reportState.doc.assets[b.assetId]) {
+      const a = reportState.doc.assets[b.assetId];
+      b.previewUrl = a.composedUrl || a.dataUrl || a.rawUrl || "";
+      if (!a.rawUrl && a.dataUrl) a.rawUrl = a.dataUrl;
+    }
+  }
+}
+
 function saveDoc() {
   try {
-    const slim = {
-      ...reportState.doc,
-      blocks: reportState.doc.blocks.map((b) => {
-        if (b.type !== "photo") return b;
-        return { ...b, previewUrl: "" };
-      }),
-    };
-    localStorage.setItem(REPORT_KEY, JSON.stringify(slim));
+    localStorage.setItem(REPORT_KEY, JSON.stringify(serializeDoc()));
   } catch (e) {
-    console.warn("报告保存失败", e);
+    console.warn("草稿保存失败", e);
   }
+  setDirty(true);
 }
 
 function loadDoc() {
@@ -114,15 +152,155 @@ function loadDoc() {
     if (!raw) return;
     const parsed = JSON.parse(raw);
     if (!parsed?.blocks) return;
-    reportState.doc = parsed;
-    for (const b of reportState.doc.blocks) {
-      if (b.type === "photo" && b.assetId && reportState.doc.assets[b.assetId]) {
-        const a = reportState.doc.assets[b.assetId];
-        b.previewUrl = a.composedUrl || a.dataUrl || a.rawUrl || "";
-        if (!a.rawUrl && a.dataUrl) a.rawUrl = a.dataUrl;
-      }
-    }
+    hydrateDoc(parsed);
+    reportState.dirty = false;
   } catch (_) {}
+}
+
+function projectJsonString() {
+  return JSON.stringify(
+    {
+      app: "现场图片工具",
+      format: "xctp",
+      version: 2,
+      savedAt: new Date().toISOString(),
+      doc: serializeDoc(),
+    },
+    null,
+    2
+  );
+}
+
+function suggestedProjectName() {
+  const t =
+    reportState.doc.title ||
+    reportState.doc.blocks.find((x) => x.type === "heading")?.text ||
+    "未命名";
+  return String(t).replace(/[\\/:*?"<>|]/g, "_").trim() || "未命名";
+}
+
+async function openProjectFile() {
+  if (!window.syDesktop?.openProject) {
+    alert("打开工程仅支持桌面 App");
+    return;
+  }
+  if (reportState.dirty && !confirm("当前有未保存修改，打开其它工程将丢失，继续？")) return;
+  const res = await window.syDesktop.openProject();
+  if (!res?.ok) {
+    if (!res?.canceled && res?.error) alert(res.error);
+    return;
+  }
+  const data = res.data?.doc ? res.data.doc : res.data;
+  if (!data?.blocks) {
+    alert("工程文件格式不正确");
+    return;
+  }
+  hydrateDoc(data);
+  reportState.projectPath = res.path;
+  reportState.selectedId = reportState.doc.blocks.find((b) => b.type !== "pageBreak")?.id || null;
+  reportState.dirty = false;
+  saveDoc(); // 同步草稿
+  renderPaper();
+  updateProjectStatus();
+  setMode("report");
+  setStatusBar("已打开：" + res.path);
+}
+
+async function saveProjectFile({ saveAs = false } = {}) {
+  if (!window.syDesktop?.saveProject) {
+    // Web：仅 localStorage
+    saveDoc();
+    setDirty(false);
+    setStatusBar("已保存到浏览器本地草稿");
+    return;
+  }
+  const res = await window.syDesktop.saveProject({
+    path: saveAs ? null : reportState.projectPath,
+    askPath: saveAs || !reportState.projectPath,
+    json: projectJsonString(),
+    suggestedName: suggestedProjectName() + ".xctp",
+  });
+  if (!res?.ok) {
+    if (!res?.canceled && res?.error) alert("保存失败：" + res.error);
+    return;
+  }
+  reportState.projectPath = res.path;
+  reportState.dirty = false;
+  saveDoc();
+  // saveDoc 会 setDirty(true)，再清掉
+  reportState.dirty = false;
+  updateProjectStatus();
+  setStatusBar("已保存：" + res.path);
+}
+
+async function autosaveProjectFile() {
+  if (!window.syDesktop?.autosaveProject) return;
+  if (!reportState.dirty && reportState.projectPath) return;
+  const res = await window.syDesktop.autosaveProject({
+    path: reportState.projectPath,
+    json: projectJsonString(),
+    suggestedName: suggestedProjectName(),
+  });
+  if (res?.ok) {
+    reportState.projectPath = res.path;
+    reportState.dirty = false;
+    updateProjectStatus();
+    setStatusBar("自动保存：" + new Date().toLocaleTimeString() + " · " + res.path.split(/[/\\]/).pop());
+  }
+}
+
+function setupAutoSave() {
+  if (reportState._autoTimer) {
+    clearInterval(reportState._autoTimer);
+    reportState._autoTimer = null;
+  }
+  const mins = Number(reportState.settings.autoSaveMinutes) || 0;
+  if (mins <= 0 || !window.syDesktop?.autosaveProject) return;
+  reportState._autoTimer = setInterval(() => {
+    autosaveProjectFile();
+  }, mins * 60 * 1000);
+}
+
+function setStatusBar(msg) {
+  const el = $("#fileStatusMsg");
+  if (el) {
+    el.textContent = msg || "";
+  }
+}
+
+async function loadSettingsUI() {
+  if (!window.syDesktop?.getSettings) return;
+  reportState.settings = await window.syDesktop.getSettings();
+  const dir = $("#settingDefaultDir");
+  const mins = $("#settingAutoSave");
+  if (dir) dir.value = reportState.settings.defaultSaveDir || "";
+  if (mins) mins.value = String(reportState.settings.autoSaveMinutes ?? 3);
+  setupAutoSave();
+}
+
+async function saveSettingsFromUI() {
+  if (!window.syDesktop?.setSettings) return;
+  const dir = $("#settingDefaultDir")?.value?.trim() || "";
+  const mins = Math.max(0, Math.min(120, Number($("#settingAutoSave")?.value) || 0));
+  reportState.settings = await window.syDesktop.setSettings({
+    defaultSaveDir: dir,
+    autoSaveMinutes: mins,
+  });
+  setupAutoSave();
+  setStatusBar("设置已保存");
+  closeSettingsModal();
+}
+
+function openSettingsModal() {
+  const m = $("#settingsModal");
+  if (!m) return;
+  loadSettingsUI();
+  m.hidden = false;
+}
+
+function closeSettingsModal() {
+  const m = $("#settingsModal");
+  if (m) m.hidden = true;
 }
 
 // —— 分页渲染 ——
@@ -416,12 +594,16 @@ function delBlock(id) {
 }
 
 function newReport() {
-  if (!confirm("新建报告将清空当前内容，确定？")) return;
+  if (reportState.dirty && !confirm("当前有未保存修改，新建将清空，确定？")) return;
+  if (!reportState.dirty && !confirm("新建报告将清空当前内容，确定？")) return;
   reportState.doc = defaultDoc();
   reportState.selectedId = reportState.doc.blocks[0].id;
+  reportState.projectPath = null;
   saveDoc();
+  reportState.dirty = false;
   renderPaper();
   hideWmSection();
+  updateProjectStatus();
 }
 
 // —— 图片 + 水印实时合成 ——
@@ -686,6 +868,19 @@ function bindReportEvents() {
   $("#btnInsertLabel")?.addEventListener("click", insertLabel);
   $("#btnInsertPhoto")?.addEventListener("click", insertPhoto);
   $("#btnInsertPage")?.addEventListener("click", insertNextPage);
+  $("#btnOpenProject")?.addEventListener("click", openProjectFile);
+  $("#btnSaveProject")?.addEventListener("click", () => saveProjectFile({ saveAs: false }));
+  $("#btnSaveProjectAs")?.addEventListener("click", () => saveProjectFile({ saveAs: true }));
+  $("#btnSettings")?.addEventListener("click", openSettingsModal);
+  $("#btnPickDefaultDir")?.addEventListener("click", async () => {
+    if (!window.syDesktop?.pickDirectory) return;
+    const res = await window.syDesktop.pickDirectory();
+    if (res?.ok && $("#settingDefaultDir")) $("#settingDefaultDir").value = res.path;
+  });
+  $("#btnSaveSettings")?.addEventListener("click", saveSettingsFromUI);
+  document.querySelectorAll("[data-close-settings]").forEach((el) => {
+    el.addEventListener("click", closeSettingsModal);
+  });
 
   $("#reportDocTitle")?.addEventListener("input", (e) => {
     reportState.doc.title = e.target.value;
@@ -800,12 +995,20 @@ function initReport() {
     /office\.html/i.test(location.pathname || location.href || "");
 
   setMode(isDesktopOffice ? "report" : "watermark");
+  updateProjectStatus();
+  loadSettingsUI().then(() => setupAutoSave());
 
   if (window.syDesktop?.onExportDocx) {
     window.syDesktop.onExportDocx(() => {
       setMode("report");
       exportDocx();
     });
+  }
+  if (window.syDesktop?.onMenu) {
+    window.syDesktop.onMenu("menu:open-project", openProjectFile);
+    window.syDesktop.onMenu("menu:save-project", () => saveProjectFile({ saveAs: false }));
+    window.syDesktop.onMenu("menu:save-project-as", () => saveProjectFile({ saveAs: true }));
+    window.syDesktop.onMenu("menu:settings", openSettingsModal);
   }
 }
 
@@ -820,4 +1023,6 @@ window.SyReport = {
   exportDocx,
   getDoc: () => reportState.doc,
   insertNextPage,
+  openProject: openProjectFile,
+  saveProject: saveProjectFile,
 };
